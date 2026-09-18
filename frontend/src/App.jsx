@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { createProject, getProjects } from './api/client'
-import './App.css'
+import DashboardHeader from './components/DashboardHeader'
+import WorkflowSidebar from './components/WorkflowSidebar'
+import WorkspaceView from './components/WorkspaceView'
 
 function App() {
   const [projects, setProjects] = useState([])
@@ -9,6 +11,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   useEffect(() => {
     async function loadProjects() {
@@ -51,87 +54,31 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Project review workspace</p>
-          <h1>ProjectMentor</h1>
-        </div>
-        <span className="status-badge">Workspace</span>
-      </header>
-
-      <section className="intro">
-        <p className="eyebrow">Start here</p>
-        <h2>Give your project a place to grow.</h2>
-        <p className="intro-copy">
-          Create a project now. Repository review and interview preparation will
-          build on this foundation.
-        </p>
-      </section>
-
-      <section className="workspace-grid">
-        <form className="project-form" onSubmit={handleSubmit}>
-          <div>
-            <p className="eyebrow">New project</p>
-            <h2>Set up a project</h2>
-          </div>
-          <label htmlFor="project-name">Project name</label>
-          <input
-            id="project-name"
-            type="text"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="e.g. Mentor API"
-            maxLength={120}
-            disabled={isSubmitting}
-          />
-          <label htmlFor="project-description">Description <span>(optional)</span></label>
-          <textarea
-            id="project-description"
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder="What are you building?"
-            rows="4"
-            maxLength={500}
-            disabled={isSubmitting}
-          />
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Creating project...' : 'Create project'}
-          </button>
-        </form>
-
-        <section className="project-list" aria-labelledby="projects-heading">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Your workspace</p>
-              <h2 id="projects-heading">Projects</h2>
-            </div>
-            {!isLoading && <span className="project-count">{projects.length}</span>}
-          </div>
-
-          {error && <p className="message error-message">{error}</p>}
-          {isLoading && <p className="message">Loading projects...</p>}
-          {!isLoading && !error && projects.length === 0 && (
-            <p className="message empty-message">No projects yet. Create your first one.</p>
-          )}
-          {!isLoading && !error && projects.length > 0 && (
-            <ul className="projects">
-              {projects.map((project) => (
-                <li key={project.id} className="project-item">
-                  <div>
-                    <h3>{project.name}</h3>
-                    <p>{project.description || 'No description yet.'}</p>
-                  </div>
-                  <time dateTime={project.created_at}>
-                    {new Date(project.created_at).toLocaleDateString()}
-                  </time>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </section>
-    </main>
+    <div className="min-h-screen bg-slate-950 text-slate-300">
+      <DashboardHeader
+        activeProject={projects[0]}
+        onMenuToggle={() => setIsSidebarOpen((isOpen) => !isOpen)}
+      />
+      <div className="mx-auto flex max-w-[1600px] flex-col lg:min-h-[calc(100vh-65px)] lg:flex-row">
+        <WorkflowSidebar
+          isOpen={isSidebarOpen}
+          onNavigate={() => setIsSidebarOpen(false)}
+        />
+        <WorkspaceView
+          projectManagerProps={{
+            description,
+            error,
+            isLoading,
+            isSubmitting,
+            name,
+            onDescriptionChange: (event) => setDescription(event.target.value),
+            onNameChange: (event) => setName(event.target.value),
+            onSubmit: handleSubmit,
+            projects,
+          }}
+        />
+      </div>
+    </div>
   )
 }
 
