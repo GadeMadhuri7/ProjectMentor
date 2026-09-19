@@ -1,5 +1,9 @@
 import Icon from './Icon'
 import ProjectManager from './ProjectManager'
+import ArchitectureMap from './ArchitectureMap'
+import InsightsPanel from './InsightsPanel'
+import TechnologySummary from './TechnologySummary'
+import { architectureInsights, architectureNodes, technologySummaries } from './architectureData'
 
 function WorkspaceView({ projectManagerProps }) {
   return (
@@ -38,14 +42,11 @@ function WorkspaceView({ projectManagerProps }) {
           </button>
         </div>
 
-        <div className="mt-6 flex min-h-56 items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 px-6 py-12 text-center">
-          <div className="max-w-sm">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-600">
-              <Icon name="layers" size={20} />
-            </div>
-            <h2 className="mt-4 text-sm font-medium text-slate-300">Architecture map will appear here</h2>
-            <p className="mt-2 text-xs leading-5 text-slate-600">Connect a repository to start mapping its structure and dependencies.</p>
-          </div>
+        <TechnologySummary technologies={technologySummaries} />
+
+        <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]">
+          <ArchitectureMap nodes={architectureNodes} />
+          <InsightsPanel insights={architectureInsights} />
         </div>
 
         <ProjectManager {...projectManagerProps} />

@@ -18,6 +18,14 @@ const iconPaths = {
       <path d="m14 5-4 14" />
     </>
   ),
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  database: (
+    <>
+      <ellipse cx="12" cy="5" rx="7" ry="3" />
+      <path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+      <path d="M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" />
+    </>
+  ),
   folder: (
     <>
       <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v7A1.5 1.5 0 0 1 19.5 18h-15A1.5 1.5 0 0 1 3 16.5z" />
@@ -35,6 +43,12 @@ const iconPaths = {
       <path d="M4 6h16M4 12h16M4 18h16" />
     </>
   ),
+  monitor: (
+    <>
+      <rect height="13" rx="1.5" width="18" x="3" y="4" />
+      <path d="M8 20h8M12 17v3" />
+    </>
+  ),
   refresh: (
     <>
       <path d="M20 11a8.1 8.1 0 0 0-14.8-3L3 10" />
@@ -47,6 +61,13 @@ const iconPaths = {
     <>
       <circle cx="11" cy="11" r="6.5" />
       <path d="m16 16 4 4" />
+    </>
+  ),
+  server: (
+    <>
+      <rect height="6" rx="1.5" width="16" x="4" y="4" />
+      <rect height="6" rx="1.5" width="16" x="4" y="14" />
+      <path d="M8 7h.01M8 17h.01" />
     </>
   ),
   sparkles: (
