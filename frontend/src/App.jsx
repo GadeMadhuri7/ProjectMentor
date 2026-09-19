@@ -3,6 +3,7 @@ import { createProject, getProjects } from './api/client'
 import DashboardHeader from './components/DashboardHeader'
 import WorkflowSidebar from './components/WorkflowSidebar'
 import WorkspaceView from './components/WorkspaceView'
+import { checkHealth } from './services/api'
 
 function App() {
   const [projects, setProjects] = useState([])
@@ -12,6 +13,8 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [activeStage, setActiveStage] = useState('interview')
+  const [health, setHealth] = useState(null)
 
   useEffect(() => {
     async function loadProjects() {
@@ -26,6 +29,10 @@ function App() {
     }
 
     loadProjects()
+  }, [])
+
+  useEffect(() => {
+    checkHealth().then(setHealth).catch((requestError) => setHealth({ error: requestError.message }))
   }, [])
 
   async function handleSubmit(event) {
@@ -57,14 +64,20 @@ function App() {
     <div className="min-h-screen bg-slate-950 text-slate-300">
       <DashboardHeader
         activeProject={projects[0]}
+        health={health}
         onMenuToggle={() => setIsSidebarOpen((isOpen) => !isOpen)}
       />
       <div className="mx-auto flex max-w-[1600px] flex-col lg:min-h-[calc(100vh-65px)] lg:flex-row">
         <WorkflowSidebar
+          activeStage={activeStage}
           isOpen={isSidebarOpen}
-          onNavigate={() => setIsSidebarOpen(false)}
+          onNavigate={(stage) => {
+            setActiveStage(stage)
+            setIsSidebarOpen(false)
+          }}
         />
         <WorkspaceView
+          stage={activeStage}
           projectManagerProps={{
             description,
             error,

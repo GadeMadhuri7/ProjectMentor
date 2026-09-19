@@ -1,14 +1,14 @@
 import Icon from './Icon'
 
 const workflowSteps = [
-  { number: '1', label: 'Upload Repository', icon: 'upload', state: 'complete' },
-  { number: '2', label: 'Understand', icon: 'layers', state: 'complete' },
-  { number: '3', label: 'Review Findings', icon: 'activity', state: 'complete' },
-  { number: '4', label: 'Improve Suggestions', icon: 'sparkles', state: 'complete' },
-  { number: '5', label: 'Interview Prep', icon: 'user', state: 'active' },
+  { id: 'upload', number: '1', label: 'Upload Repository', icon: 'upload' },
+  { id: 'understand', number: '2', label: 'Understand', icon: 'layers' },
+  { id: 'review', number: '3', label: 'Review Findings', icon: 'activity' },
+  { id: 'improve', number: '4', label: 'Improve Suggestions', icon: 'sparkles' },
+  { id: 'interview', number: '5', label: 'Interview Prep', icon: 'user' },
 ]
 
-function WorkflowSidebar({ isOpen, onNavigate }) {
+function WorkflowSidebar({ activeStage, isOpen, onNavigate }) {
   return (
     <aside
       className={`${isOpen ? 'block' : 'hidden'} border-b border-slate-800 bg-slate-950/70 lg:block lg:w-64 lg:shrink-0 lg:border-b-0 lg:border-r`}
@@ -24,8 +24,8 @@ function WorkflowSidebar({ isOpen, onNavigate }) {
 
         <nav aria-label="Analysis workflow" className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible">
           {workflowSteps.map((step) => {
-            const isActive = step.state === 'active'
-            const isComplete = step.state === 'complete'
+            const isActive = step.id === activeStage
+            const isComplete = !isActive && Number(step.number) < Number(activeStage === 'upload' ? 1 : activeStage === 'understand' ? 2 : activeStage === 'review' ? 3 : activeStage === 'improve' ? 4 : 5)
             return (
               <button
                 aria-current={isActive ? 'step' : undefined}
@@ -35,7 +35,7 @@ function WorkflowSidebar({ isOpen, onNavigate }) {
                     : 'border-transparent text-slate-500 hover:border-slate-800 hover:bg-slate-900/70 hover:text-slate-300'
                 }`}
                 key={step.number}
-                onClick={onNavigate}
+                onClick={() => onNavigate(step.id)}
                 type="button"
               >
                 <span

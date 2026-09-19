@@ -23,4 +23,4 @@ app.include_router(projects_router, prefix='/api')
 
 @app.get('/api/health')
 def health_check():
-    return {'status': 'ok'}
+    return {'status': 'ok', 'service': 'ProjectMentor API'}

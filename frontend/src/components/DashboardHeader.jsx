@@ -1,6 +1,6 @@
 import Icon from './Icon'
 
-function DashboardHeader({ activeProject, onMenuToggle }) {
+function DashboardHeader({ activeProject, health, onMenuToggle }) {
   return (
     <header className="border-b border-slate-800/90 bg-slate-950/95 px-4 py-3 shadow-2xl shadow-slate-950/20 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-4">
@@ -13,6 +13,10 @@ function DashboardHeader({ activeProject, onMenuToggle }) {
           >
             <Icon name="menu" />
           </button>
+          <div className={`hidden items-center gap-2 text-[10px] font-medium sm:flex ${health?.status === 'ok' ? 'text-emerald-400' : health?.error ? 'text-rose-400' : 'text-slate-600'}`} title={health?.error || health?.service || 'Checking API connection'}>
+            <span className={`h-1.5 w-1.5 rounded-full ${health?.status === 'ok' ? 'bg-emerald-400' : health?.error ? 'bg-rose-400' : 'bg-slate-600'}`} />
+            {health?.status === 'ok' ? 'API connected' : health?.error ? 'API unavailable' : 'Checking API'}
+          </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-lg font-bold text-white shadow-lg shadow-indigo-500/20">
             P
           </div>
