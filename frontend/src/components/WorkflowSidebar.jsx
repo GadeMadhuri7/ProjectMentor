@@ -4,8 +4,8 @@ const workflowSteps = [
   { number: '1', label: 'Upload Repository', icon: 'upload', state: 'complete' },
   { number: '2', label: 'Understand', icon: 'layers', state: 'complete' },
   { number: '3', label: 'Review Findings', icon: 'activity', state: 'complete' },
-  { number: '4', label: 'Improve Suggestions', icon: 'sparkles', state: 'active' },
-  { number: '5', label: 'Interview Prep', icon: 'user', state: 'upcoming' },
+  { number: '4', label: 'Improve Suggestions', icon: 'sparkles', state: 'complete' },
+  { number: '5', label: 'Interview Prep', icon: 'user', state: 'active' },
 ]
 
 function WorkflowSidebar({ isOpen, onNavigate }) {
