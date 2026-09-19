@@ -1,0 +1,70 @@
+export const reviewSummary = [
+  { label: 'Total findings', value: '08', detail: 'Across the review scope', accent: 'indigo' },
+  { label: 'Architecture', value: '03', detail: 'Structure and boundaries', accent: 'blue' },
+  { label: 'Security', value: '01', detail: 'Risk signals to verify', accent: 'rose' },
+  { label: 'Code quality', value: '03', detail: 'Maintainability signals', accent: 'amber' },
+  { label: 'Documentation', value: '01', detail: 'Context gaps to clarify', accent: 'emerald' },
+]
+
+export const reviewFindings = [
+  {
+    category: 'Architecture',
+    categoryTone: 'blue',
+    severity: 'Review',
+    severityTone: 'indigo',
+    title: 'Service boundary is easy to identify',
+    description: 'The application presents a clear handoff between the browser client, API gateway, and persistence layer.',
+    icon: 'layers',
+    evidence: {
+      source: 'frontend/src/api/client.js',
+      description: 'The client module centralizes browser requests behind a small project-focused API surface.',
+      finding: 'A focused client boundary supports predictable request ownership.',
+      impact: 'Future features can extend the API client without spreading request details through the UI.',
+    },
+  },
+  {
+    category: 'Data Flow',
+    categoryTone: 'amber',
+    severity: 'Trace',
+    severityTone: 'amber',
+    title: 'Project creation follows a direct request path',
+    description: 'The create-project interaction provides a compact path from form submission to persisted project context.',
+    icon: 'activity',
+    evidence: {
+      source: 'frontend/src/components/ProjectManager.jsx',
+      description: 'The project form gathers name and description values before invoking the supplied submit handler.',
+      finding: 'Input ownership stays close to the project workspace surface.',
+      impact: 'The flow should be straightforward to validate when real evidence is connected later.',
+    },
+  },
+  {
+    category: 'Security',
+    categoryTone: 'rose',
+    severity: 'Verify',
+    severityTone: 'rose',
+    title: 'Repository context needs an explicit trust boundary',
+    description: 'The workspace will need a clear policy for which repository metadata may be exposed to future analysis tools.',
+    icon: 'code',
+    evidence: {
+      source: 'Workspace context (mock example)',
+      description: 'The current shell reserves space for repository context but does not implement repository analysis.',
+      finding: 'Repository-derived context should be treated as untrusted input.',
+      impact: 'A future implementation should define filtering and access rules before analysis is enabled.',
+    },
+  },
+  {
+    category: 'Documentation',
+    categoryTone: 'emerald',
+    severity: 'Context',
+    severityTone: 'emerald',
+    title: 'Architecture notes can anchor the project story',
+    description: 'The architecture workspace gives contributors a concise place to connect technologies with responsibilities.',
+    icon: 'folder',
+    evidence: {
+      source: 'Architecture workspace (mock example)',
+      description: 'The preceding workspace presents technology cards, a system map, and inferred design notes.',
+      finding: 'Visual context can become a useful starting point for deeper project documentation.',
+      impact: 'Keeping these notes current will reduce the cost of onboarding and interview preparation.',
+    },
+  },
+]
