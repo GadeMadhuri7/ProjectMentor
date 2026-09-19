@@ -1,7 +1,7 @@
-import ReviewWorkspace from './ReviewWorkspace'
+import ImproveWorkspace from './ImproveWorkspace'
 
 function WorkspaceView({ projectManagerProps }) {
-  return <ReviewWorkspace projectManagerProps={projectManagerProps} />
+  return <ImproveWorkspace projectManagerProps={projectManagerProps} />
 }
 
 export default WorkspaceView
