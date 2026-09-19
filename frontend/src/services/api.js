@@ -5,13 +5,13 @@ const apiBaseUrl = configuredBaseUrl.endsWith('/api') || configuredBaseUrl === '
 
 export async function request(path, options = {}) {
   let response
+  const headers = options.body instanceof FormData
+    ? { ...options.headers }
+    : { 'Content-Type': 'application/json', ...options.headers }
 
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
+      headers,
       ...options,
     })
   } catch {
@@ -28,4 +28,14 @@ export async function request(path, options = {}) {
 
 export function checkHealth() {
   return request('/health')
+}
+
+export function analyzeProject(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return request('/projects/analyze', {
+    method: 'POST',
+    headers: {},
+    body: formData,
+  })
 }

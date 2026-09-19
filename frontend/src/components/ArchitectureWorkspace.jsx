@@ -5,7 +5,7 @@ import InsightsPanel from './InsightsPanel'
 import TechnologySummary from './TechnologySummary'
 import { architectureInsights, architectureNodes, technologySummaries } from './architectureData'
 
-function ArchitectureWorkspace({ projectManagerProps }) {
+function ArchitectureWorkspace({ analysis, projectManagerProps }) {
   return (
     <main className="min-w-0 flex-1 bg-slate-950">
       <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6 sm:py-7 lg:px-10 lg:py-9">
@@ -21,6 +21,7 @@ function ArchitectureWorkspace({ projectManagerProps }) {
           <div className="flex items-center gap-6"><button className="relative pb-3 text-xs font-semibold text-indigo-300 after:absolute after:inset-x-0 after:-bottom-px after:h-0.5 after:bg-indigo-400" type="button"><span className="inline-flex items-center gap-2"><Icon name="layers" size={15} />Diagram Map</span></button><button className="pb-3 text-xs font-medium text-slate-600 transition hover:text-slate-300" type="button"><span className="inline-flex items-center gap-2"><Icon name="folder" size={15} />Files Tree</span></button></div>
           <button aria-label="Search workspace" className="mb-2 rounded-lg p-2 text-slate-600 transition hover:bg-slate-900 hover:text-slate-300" type="button"><Icon name="search" size={16} /></button>
         </div>
+        {analysis && <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-emerald-400/15 bg-emerald-400/[0.03] px-4 py-3"><span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-400">Analyzed project</span><span className="font-mono text-xs text-slate-300">{analysis.project_name}</span><span className="text-xs text-slate-500">{analysis.total_files} files</span><span className="text-xs text-slate-500">{analysis.technologies.join(', ') || 'No technologies detected'}</span></div>}
         <TechnologySummary technologies={technologySummaries} />
         <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(320px,0.7fr)]"><ArchitectureMap nodes={architectureNodes} /><InsightsPanel insights={architectureInsights} /></div>
         <ProjectManager {...projectManagerProps} />

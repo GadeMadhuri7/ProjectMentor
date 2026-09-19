@@ -4,11 +4,11 @@ import ImproveWorkspace from './ImproveWorkspace'
 import ReviewWorkspace from './ReviewWorkspace'
 import UploadWorkspace from './UploadWorkspace'
 
-function WorkspaceView({ projectManagerProps, stage }) {
+function WorkspaceView({ analysis, analysisError, isAnalyzing, onAnalyze, projectManagerProps, stage }) {
   const workspaceProps = { projectManagerProps }
 
-  if (stage === 'upload') return <UploadWorkspace {...workspaceProps} />
-  if (stage === 'understand') return <ArchitectureWorkspace {...workspaceProps} />
+  if (stage === 'upload') return <UploadWorkspace analysis={analysis} analysisError={analysisError} isAnalyzing={isAnalyzing} onAnalyze={onAnalyze} {...workspaceProps} />
+  if (stage === 'understand') return <ArchitectureWorkspace analysis={analysis} {...workspaceProps} />
   if (stage === 'review') return <ReviewWorkspace {...workspaceProps} />
   if (stage === 'improve') return <ImproveWorkspace {...workspaceProps} />
   return <InterviewWorkspace {...workspaceProps} />

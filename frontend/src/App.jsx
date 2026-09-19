@@ -3,7 +3,7 @@ import { createProject, getProjects } from './api/client'
 import DashboardHeader from './components/DashboardHeader'
 import WorkflowSidebar from './components/WorkflowSidebar'
 import WorkspaceView from './components/WorkspaceView'
-import { checkHealth } from './services/api'
+import { analyzeProject, checkHealth } from './services/api'
 
 function App() {
   const [projects, setProjects] = useState([])
@@ -15,6 +15,9 @@ function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [activeStage, setActiveStage] = useState('interview')
   const [health, setHealth] = useState(null)
+  const [analysis, setAnalysis] = useState(null)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
+  const [analysisError, setAnalysisError] = useState('')
 
   useEffect(() => {
     async function loadProjects() {
@@ -60,6 +63,19 @@ function App() {
     }
   }
 
+  async function handleAnalyze(file) {
+    try {
+      setIsAnalyzing(true)
+      setAnalysisError('')
+      setAnalysis(await analyzeProject(file))
+      setActiveStage('understand')
+    } catch (requestError) {
+      setAnalysisError(requestError.message)
+    } finally {
+      setIsAnalyzing(false)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-300">
       <DashboardHeader
@@ -77,6 +93,10 @@ function App() {
           }}
         />
         <WorkspaceView
+          analysis={analysis}
+          analysisError={analysisError}
+          isAnalyzing={isAnalyzing}
+          onAnalyze={handleAnalyze}
           stage={activeStage}
           projectManagerProps={{
             description,
