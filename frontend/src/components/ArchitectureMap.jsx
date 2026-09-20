@@ -1,7 +1,7 @@
 import Icon from './Icon'
 import ArchitectureNode from './ArchitectureNode'
 
-function ArchitectureMap({ nodes }) {
+function ArchitectureMap({ isAnalyzed, nodes }) {
   return (
     <section aria-labelledby="architecture-map-heading" className="rounded-2xl border border-slate-800 bg-slate-900/45 p-5 shadow-xl shadow-slate-950/10 sm:p-6">
       <div className="flex items-start justify-between gap-4 border-b border-slate-800/80 pb-4">
@@ -24,7 +24,7 @@ function ArchitectureMap({ nodes }) {
           </div>
         ))}
       </div>
-      <p className="mt-5 border-t border-slate-800/80 pt-4 text-center font-mono text-[10px] text-slate-600">CLIENT &rarr; SERVICE &rarr; PERSISTENCE</p>
+      <p className="mt-5 border-t border-slate-800/80 pt-4 text-center font-mono text-[10px] text-slate-600">{isAnalyzed ? 'STATIC ANALYSIS FACTS' : 'CLIENT &rarr; SERVICE &rarr; PERSISTENCE'}</p>
     </section>
   )
 }

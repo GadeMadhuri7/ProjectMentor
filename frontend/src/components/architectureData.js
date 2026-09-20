@@ -49,3 +49,48 @@ export const architectureInsights = [
     icon: 'activity',
   },
 ]
+
+export function getAnalysisTechnologySummaries(technologies) {
+  return technologies.map((technology) => ({
+    label: 'Detected technology',
+    value: technology,
+    detail: 'Static manifest signal',
+    icon: 'code',
+    accent: 'indigo',
+  }))
+}
+
+export function getAnalysisNodes(analysis) {
+  const languageSummary = analysis.languages.length > 0
+    ? analysis.languages.map(({ name, file_count }) => `${name} (${file_count})`).join(', ')
+    : 'No recognized languages'
+  const technologySummary = analysis.technologies.length > 0
+    ? analysis.technologies.join(', ')
+    : 'No technologies detected'
+
+  return [
+    { name: analysis.project_name, description: `${analysis.total_files} files in ${analysis.total_directories} directories`, icon: 'folder', accent: 'blue' },
+    { name: 'Detected languages', description: languageSummary, icon: 'code', accent: 'indigo' },
+    { name: 'Detected technologies', description: technologySummary, icon: 'layers', accent: 'amber' },
+    { name: 'Important files', description: `${analysis.important_files.length} identified`, icon: 'activity', accent: 'blue' },
+  ]
+}
+
+export function getAnalysisInsights(analysis) {
+  return [
+    {
+      category: 'Static fact',
+      title: 'Repository inventory',
+      description: `${analysis.total_files} files and ${analysis.total_directories} directories were inspected without executing project code.`,
+      icon: 'folder',
+    },
+    {
+      category: 'Static fact',
+      title: 'Manifest signals',
+      description: analysis.technologies.length > 0
+        ? `The analyzer detected ${analysis.technologies.join(', ')} from recognized project manifests.`
+        : 'No supported technology signals were found in recognized manifests.',
+      icon: 'code',
+    },
+  ]
+}
