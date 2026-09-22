@@ -68,3 +68,110 @@ export const reviewFindings = [
     },
   },
 ]
+
+export function getAnalysisReviewSummary(analysis) {
+  const warningCount = analysis.analysis_warnings.length
+
+  return [
+    { label: 'Static observations', value: '05', detail: 'Facts derived from the analyzer', accent: 'indigo' },
+    { label: 'Project scope', value: analysis.total_files.toString(), detail: `${analysis.total_directories} directories inspected`, accent: 'blue' },
+    { label: 'Languages', value: analysis.languages.length.toString(), detail: 'Recognized language signals', accent: 'amber' },
+    { label: 'Technologies', value: analysis.technologies.length.toString(), detail: 'Manifest signals detected', accent: 'emerald' },
+    { label: 'Analysis warnings', value: warningCount.toString(), detail: warningCount === 0 ? 'No analyzer warnings found' : 'Coverage warnings to review', accent: warningCount === 0 ? 'emerald' : 'rose' },
+  ]
+}
+
+export function getAnalysisReviewFindings(analysis) {
+  const structureFileCount = analysis.structure.files.length
+  const structureDirectoryCount = analysis.structure.directories.length
+  const languageSummary = analysis.languages.length > 0
+    ? analysis.languages.map(({ name, file_count }) => `${name} (${file_count} files)`).join(', ')
+    : 'No recognized languages detected.'
+  const technologySummary = analysis.technologies.length > 0
+    ? analysis.technologies.join(', ')
+    : 'No supported technology signals detected.'
+  const importantFilesSummary = analysis.important_files.length > 0
+    ? analysis.important_files.join(', ')
+    : 'No recognized important files detected.'
+  const warningSummary = analysis.analysis_warnings.length > 0
+    ? analysis.analysis_warnings.join(' ')
+    : 'No analyzer warnings were reported for this project.'
+
+  return [
+    {
+      category: 'Project inventory',
+      categoryTone: 'blue',
+      severity: 'Static fact',
+      severityTone: 'indigo',
+      title: 'Project scope was inspected',
+      description: `${analysis.project_name} contains ${analysis.total_files} files across ${analysis.total_directories} directories in the analyzer result.`,
+      icon: 'folder',
+      evidence: {
+        source: 'Analyzer project inventory',
+        description: `The static analyzer counted files and directories without executing project code. Its structure snapshot contains ${structureFileCount} file records and ${structureDirectoryCount} directory records.`,
+        finding: `${analysis.total_files} files and ${analysis.total_directories} directories were reported.`,
+        impact: 'This establishes the scope represented by the current static analysis.',
+      },
+    },
+    {
+      category: 'Languages',
+      categoryTone: 'indigo',
+      severity: 'Static fact',
+      severityTone: 'indigo',
+      title: 'Recognized language signals',
+      description: languageSummary,
+      icon: 'code',
+      evidence: {
+        source: 'Analyzer languages result',
+        description: 'Language values are inferred from recognized file extensions and counted by file.',
+        finding: languageSummary,
+        impact: 'This identifies the language signals included in the analysis scope.',
+      },
+    },
+    {
+      category: 'Technologies',
+      categoryTone: 'amber',
+      severity: 'Manifest signal',
+      severityTone: 'amber',
+      title: 'Recognized technology signals',
+      description: technologySummary,
+      icon: 'layers',
+      evidence: {
+        source: 'Analyzer technology result',
+        description: 'Technology values come from supported dependency and project manifest checks.',
+        finding: technologySummary,
+        impact: 'These signals provide factual context for the analyzed project.',
+      },
+    },
+    {
+      category: 'Project structure',
+      categoryTone: 'emerald',
+      severity: 'Static fact',
+      severityTone: 'emerald',
+      title: 'Recognized project files',
+      description: importantFilesSummary,
+      icon: 'activity',
+      evidence: {
+        source: 'Analyzer important_files result',
+        description: 'The analyzer records recognized project, manifest, configuration, and entry-point filenames.',
+        finding: importantFilesSummary,
+        impact: 'These files identify available project context for later review steps.',
+      },
+    },
+    {
+      category: 'Analysis coverage',
+      categoryTone: analysis.analysis_warnings.length > 0 ? 'rose' : 'emerald',
+      severity: analysis.analysis_warnings.length > 0 ? 'Warning' : 'Clear',
+      severityTone: analysis.analysis_warnings.length > 0 ? 'rose' : 'emerald',
+      title: analysis.analysis_warnings.length > 0 ? 'Analyzer warnings were reported' : 'No analyzer warnings found',
+      description: warningSummary,
+      icon: 'search',
+      evidence: {
+        source: 'Analyzer analysis_warnings result',
+        description: 'Warnings describe analysis coverage conditions such as skipped unreadable files or a file limit.',
+        finding: warningSummary,
+        impact: analysis.analysis_warnings.length > 0 ? 'Review these conditions when interpreting the static analysis scope.' : 'The analyzer reported no coverage warnings for this project.',
+      },
+    },
+  ]
+}

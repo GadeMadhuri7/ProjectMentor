@@ -2,9 +2,13 @@ import Icon from './Icon'
 import ProjectManager from './ProjectManager'
 import FindingCard from './FindingCard'
 import ReviewSummary from './ReviewSummary'
-import { reviewFindings, reviewSummary } from './reviewData'
+import { getAnalysisReviewFindings, getAnalysisReviewSummary, reviewFindings, reviewSummary } from './reviewData'
 
-function ReviewWorkspace({ projectManagerProps }) {
+function ReviewWorkspace({ analysis, projectManagerProps }) {
+  const isAnalyzed = Boolean(analysis)
+  const findings = isAnalyzed ? getAnalysisReviewFindings(analysis) : reviewFindings
+  const summary = isAnalyzed ? getAnalysisReviewSummary(analysis) : reviewSummary
+
   return (
     <main className="min-w-0 flex-1 bg-slate-950">
       <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6 sm:py-7 lg:px-10 lg:py-9">
@@ -22,12 +26,12 @@ function ReviewWorkspace({ projectManagerProps }) {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Connect each project finding to its supporting evidence, expected impact, and the questions worth investigating next.</p>
           </div>
           <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
-            <span className="h-2 w-2 rounded-full bg-amber-400" />
-            Presentation-only review context
+            <span className={`h-2 w-2 rounded-full ${isAnalyzed ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            {isAnalyzed ? 'Static analysis loaded' : 'Presentation-only review context'}
           </div>
         </div>
 
-        <ReviewSummary summary={reviewSummary} />
+        <ReviewSummary isAnalyzed={isAnalyzed} summary={summary} />
 
         <section aria-labelledby="findings-heading" className="mt-7">
           <div className="mb-3 flex items-end justify-between gap-4">
@@ -35,10 +39,10 @@ function ReviewWorkspace({ projectManagerProps }) {
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">Evidence ledger</p>
               <h2 className="mt-1 text-sm font-semibold text-slate-200" id="findings-heading">Findings to review</h2>
             </div>
-            <span className="font-mono text-[10px] text-slate-600">{reviewFindings.length.toString().padStart(2, '0')} EXAMPLES</span>
+            <span className="font-mono text-[10px] text-slate-600">{isAnalyzed ? `${findings.length.toString().padStart(2, '0')} OBSERVATIONS` : `${findings.length.toString().padStart(2, '0')} EXAMPLES`}</span>
           </div>
           <div className="grid gap-4 xl:grid-cols-2">
-            {reviewFindings.map((finding) => <FindingCard finding={finding} key={finding.title} />)}
+            {findings.map((finding) => <FindingCard finding={finding} key={finding.title} />)}
           </div>
         </section>
 

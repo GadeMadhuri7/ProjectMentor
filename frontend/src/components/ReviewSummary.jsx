@@ -16,7 +16,7 @@ const icons = {
   rose: 'code',
 }
 
-function ReviewSummary({ summary }) {
+function ReviewSummary({ isAnalyzed, summary }) {
   return (
     <section aria-labelledby="review-summary-heading" className="mt-6">
       <div className="mb-3 flex items-center justify-between gap-4">
@@ -24,7 +24,7 @@ function ReviewSummary({ summary }) {
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">Review pulse</p>
           <h2 className="mt-1 text-sm font-semibold text-slate-200" id="review-summary-heading">Finding summary</h2>
         </div>
-        <span className="hidden rounded-full border border-slate-800 bg-slate-900/60 px-2.5 py-1 font-mono text-[10px] text-slate-600 sm:inline-flex">MOCK REVIEW</span>
+        <span className="hidden rounded-full border border-slate-800 bg-slate-900/60 px-2.5 py-1 font-mono text-[10px] text-slate-600 sm:inline-flex">{isAnalyzed ? 'STATIC ANALYSIS' : 'MOCK REVIEW'}</span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {summary.map((item) => (
