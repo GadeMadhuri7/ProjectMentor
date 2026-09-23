@@ -21,6 +21,7 @@ class ProjectAnalyzerTests(unittest.TestCase):
             (root / 'src' / 'main.py').write_text('print("static only")', encoding='utf-8')
             (root / 'src' / 'app.js').write_text('export default {}', encoding='utf-8')
             (root / 'node_modules' / 'ignored.js').write_text('', encoding='utf-8')
+            (root / 'ignored.png').write_bytes(b'not inspected')
             (root / 'requirements.txt').write_text('fastapi\nSQLAlchemy\n', encoding='utf-8')
             (root / 'package.json').write_text(json.dumps({'dependencies': {'react': '^19.0.0', 'vite': '^8.0.0'}}), encoding='utf-8')
             (root / 'README.md').write_text('# Example', encoding='utf-8')
@@ -36,6 +37,38 @@ class ProjectAnalyzerTests(unittest.TestCase):
             self.assertEqual(languages['Python'], 1)
             self.assertEqual(set(result['technologies']), {'FastAPI', 'SQLAlchemy', 'React', 'Vite', 'Node.js'})
             self.assertIn('README.md', result['important_files'])
+
+            self.assertEqual(set(result['project_inventory']['source_files']), {'src/app.js', 'src/main.py'})
+            self.assertEqual(result['project_inventory']['config_files'], ['package.json', 'requirements.txt'])
+            self.assertEqual(result['project_inventory']['documentation_files'], ['README.md'])
+            self.assertEqual(result['project_inventory']['test_files'], [])
+            self.assertIn('node_modules/*', result['project_inventory']['ignored_files'])
+            self.assertIn('ignored.png', result['project_inventory']['ignored_files'])
+
+            for field in (
+                'project_name', 'total_files', 'total_directories', 'languages',
+                'technologies', 'important_files', 'structure', 'analysis_warnings',
+            ):
+                self.assertIn(field, result)
+
+    def test_categorizes_tests_and_nested_project_context_files(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / 'tests').mkdir()
+            (root / 'docs').mkdir()
+            (root / 'config').mkdir()
+            (root / 'tests' / 'test_analyzer.py').write_text('', encoding='utf-8')
+            (root / 'src').mkdir()
+            (root / 'src' / 'widget.test.js').write_text('', encoding='utf-8')
+            (root / 'docs' / 'guide.md').write_text('', encoding='utf-8')
+            (root / 'config' / 'settings.toml').write_text('', encoding='utf-8')
+
+            result = analyze_project(root, 'categorized')
+
+            self.assertEqual(set(result['project_inventory']['test_files']), {'tests/test_analyzer.py', 'src/widget.test.js'})
+            self.assertEqual(result['project_inventory']['documentation_files'], ['docs/guide.md'])
+            self.assertEqual(result['project_inventory']['config_files'], ['config/settings.toml'])
+            self.assertEqual(result['project_inventory']['source_files'], [])
 
     def test_rejects_zip_path_traversal(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
