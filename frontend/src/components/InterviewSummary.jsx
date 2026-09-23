@@ -1,6 +1,6 @@
 import Icon from './Icon'
 
-function InterviewSummary({ current, summary }) {
+function InterviewSummary({ current, isAnalyzed, summary }) {
   const progress = (current / summary.total) * 100
 
   return (
@@ -19,12 +19,12 @@ function InterviewSummary({ current, summary }) {
         <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-blue-400 transition-all duration-300" style={{ width: `${progress}%` }} />
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {[
+        {(isAnalyzed ? summary.facts.map(({ label, value, tone }) => [label, value, tone]) : [
           ['Total questions', summary.total, 'indigo'],
           ['Easy', summary.easy, 'emerald'],
           ['Medium', summary.medium, 'amber'],
           ['Hard', summary.hard, 'rose'],
-        ].map(([label, value, tone]) => (
+        ]).map(([label, value, tone]) => (
           <div className="flex items-center justify-between gap-3 border-t border-slate-800/80 pt-3" key={label}>
             <span className="text-[11px] text-slate-500">{label}</span>
             <span className={`font-mono text-sm font-semibold ${tone === 'emerald' ? 'text-emerald-300' : tone === 'amber' ? 'text-amber-300' : tone === 'rose' ? 'text-rose-300' : 'text-indigo-300'}`}>{value}</span>

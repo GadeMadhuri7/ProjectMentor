@@ -17,7 +17,7 @@ function InterviewQuestionCard({ question, questionNumber }) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-[10px] font-semibold text-slate-600">QUESTION {String(questionNumber).padStart(2, '0')}</span>
-          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${categoryStyles[question.category]}`}>{question.category}</span>
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${categoryStyles[question.category] || 'border-indigo-400/20 bg-indigo-400/10 text-indigo-300'}`}>{question.category}</span>
           <DifficultyBadge difficulty={question.difficulty} />
         </div>
         <span className="rounded-lg border border-slate-800 bg-slate-950/70 p-2 text-slate-600"><Icon name="user" size={16} /></span>

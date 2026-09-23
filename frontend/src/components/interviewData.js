@@ -84,3 +84,106 @@ export const interviewQuestions = [
     keyPoints: ['Formalize workflow and result contracts', 'Move expensive analysis to background jobs', 'Add durable progress and observability'],
   },
 ]
+
+export function getAnalysisInterviewSummary(analysis) {
+  return {
+    total: 7,
+    facts: [
+      { label: 'Files', value: analysis.total_files, tone: 'indigo' },
+      { label: 'Directories', value: analysis.total_directories, tone: 'blue' },
+      { label: 'Languages', value: analysis.languages.length, tone: 'emerald' },
+      { label: 'Technologies', value: analysis.technologies.length, tone: 'amber' },
+    ],
+  }
+}
+
+export function getAnalysisInterviewQuestions(analysis) {
+  const languageSummary = analysis.languages.length > 0
+    ? analysis.languages.map(({ name, file_count }) => `${name} (${file_count} files)`).join(', ')
+    : 'No recognized languages detected.'
+  const technologySummary = analysis.technologies.length > 0
+    ? analysis.technologies.join(', ')
+    : 'No supported technology signals detected.'
+  const importantFilesSummary = analysis.important_files.length > 0
+    ? analysis.important_files.join(', ')
+    : 'No recognized important files detected.'
+  const directorySummary = analysis.structure.directories.length > 0
+    ? analysis.structure.directories.join(', ')
+    : 'No nested directories detected.'
+  const warningSummary = analysis.analysis_warnings.length > 0
+    ? analysis.analysis_warnings.join(' ')
+    : 'No analyzer warnings found.'
+
+  return [
+    {
+      id: 'project-scope',
+      question: `How would you describe the scope of ${analysis.project_name}?`,
+      category: 'Project scope',
+      relatedArea: 'Static project inventory',
+      relatedFile: `${analysis.total_files} files / ${analysis.total_directories} directories`,
+      whyAsked: 'This gives you a factual starting point for describing the project represented by the analysis.',
+      mockAnswer: `The analyzed project is ${analysis.project_name}. The static inventory contains ${analysis.total_files} files across ${analysis.total_directories} directories.`,
+      keyPoints: [`Project name: ${analysis.project_name}`, `${analysis.total_files} files inspected`, `${analysis.total_directories} directories reported`],
+    },
+    {
+      id: 'detected-languages',
+      question: 'Which programming languages were detected in this project?',
+      category: 'Languages',
+      relatedArea: 'Language signals',
+      relatedFile: languageSummary,
+      whyAsked: 'This tests whether you can distinguish analyzer observations from assumptions about the project.',
+      mockAnswer: `The analyzer detected these language signals: ${languageSummary}`,
+      keyPoints: analysis.languages.length > 0 ? analysis.languages.map(({ name, file_count }) => `${name}: ${file_count} files`) : ['No recognized language extensions were found'],
+    },
+    {
+      id: 'detected-technologies',
+      question: 'Which technologies were detected, and what evidence supports that list?',
+      category: 'Technologies',
+      relatedArea: 'Manifest technology signals',
+      relatedFile: technologySummary,
+      whyAsked: 'This encourages a precise explanation of what the analyzer can establish from supported manifests.',
+      mockAnswer: `The analyzer detected these technology signals: ${technologySummary}. These signals come from the supported project manifests inspected by the analyzer.`,
+      keyPoints: analysis.technologies.length > 0 ? analysis.technologies : ['No supported technology signals were detected'],
+    },
+    {
+      id: 'important-files',
+      question: 'Which important project files should you be ready to explain?',
+      category: 'Important files',
+      relatedArea: 'Recognized manifests and entry points',
+      relatedFile: importantFilesSummary,
+      whyAsked: 'Recognized filenames provide concrete places to begin project orientation without implying what their contents do.',
+      mockAnswer: `The analyzer recognized these important files: ${importantFilesSummary}`,
+      keyPoints: analysis.important_files.length > 0 ? analysis.important_files.slice(0, 3) : ['No recognized important files were found'],
+    },
+    {
+      id: 'directory-organization',
+      question: 'How is the project organized according to the analyzed structure?',
+      category: 'Project structure',
+      relatedArea: 'Directory and file organization',
+      relatedFile: directorySummary,
+      whyAsked: 'This lets you describe the observable file organization without claiming architectural responsibilities the analyzer did not verify.',
+      mockAnswer: `The analyzer reported these directory paths: ${directorySummary}`,
+      keyPoints: [`${analysis.structure.files.length} file records in the structure snapshot`, `${analysis.structure.directories.length} directory records`, 'Describe observed paths before inferring responsibilities'],
+    },
+    {
+      id: 'analysis-coverage',
+      question: 'Were there any analyzer warnings or coverage limits to mention?',
+      category: 'Analysis coverage',
+      relatedArea: 'Static analysis coverage',
+      relatedFile: 'analysis_warnings',
+      whyAsked: 'A reliable interview explanation should make the limits of the available evidence explicit.',
+      mockAnswer: warningSummary,
+      keyPoints: analysis.analysis_warnings.length > 0 ? analysis.analysis_warnings : ['No analyzer warnings found'],
+    },
+    {
+      id: 'further-investigation',
+      question: 'What would you investigate further before discussing implementation decisions?',
+      category: 'Further investigation',
+      relatedArea: 'Evidence gaps and interview preparation',
+      relatedFile: analysis.important_files[0] || 'No recognized important file',
+      whyAsked: 'The current analyzer provides inventory signals, so this question helps separate verified facts from topics that need source-level investigation.',
+      mockAnswer: 'I would inspect the recognized project files and directory paths directly to understand their contents and responsibilities. I would treat the current analysis as inventory evidence rather than as proof of runtime behavior or design decisions.',
+      keyPoints: ['Inspect recognized important files', 'Trace directory contents', 'Separate static inventory from unverified behavior'],
+    },
+  ]
+}

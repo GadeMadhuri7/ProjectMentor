@@ -11,7 +11,7 @@ function WorkspaceView({ analysis, analysisError, isAnalyzing, onAnalyze, projec
   if (stage === 'understand') return <ArchitectureWorkspace analysis={analysis} {...workspaceProps} />
   if (stage === 'review') return <ReviewWorkspace analysis={analysis} {...workspaceProps} />
   if (stage === 'improve') return <ImproveWorkspace analysis={analysis} {...workspaceProps} />
-  return <InterviewWorkspace {...workspaceProps} />
+  return <InterviewWorkspace analysis={analysis} {...workspaceProps} />
 }
 
 export default WorkspaceView

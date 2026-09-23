@@ -4,15 +4,18 @@ import ProjectManager from './ProjectManager'
 import AnswerPanel from './AnswerPanel'
 import InterviewQuestionCard from './InterviewQuestionCard'
 import InterviewSummary from './InterviewSummary'
-import { interviewQuestions, interviewSummary } from './interviewData'
+import { getAnalysisInterviewQuestions, getAnalysisInterviewSummary, interviewQuestions, interviewSummary } from './interviewData'
 
-function InterviewWorkspace({ projectManagerProps }) {
+function InterviewWorkspace({ analysis, projectManagerProps }) {
   const [questionIndex, setQuestionIndex] = useState(0)
   const [isAnswerVisible, setIsAnswerVisible] = useState(false)
-  const currentQuestion = interviewQuestions[questionIndex]
+  const isAnalyzed = Boolean(analysis)
+  const questions = isAnalyzed ? getAnalysisInterviewQuestions(analysis) : interviewQuestions
+  const summary = isAnalyzed ? getAnalysisInterviewSummary(analysis) : interviewSummary
+  const currentQuestion = questions[questionIndex % questions.length]
 
   function handleNextQuestion() {
-    setQuestionIndex((index) => (index + 1) % interviewQuestions.length)
+    setQuestionIndex((index) => (index + 1) % questions.length)
     setIsAnswerVisible(false)
   }
 
@@ -32,27 +35,27 @@ function InterviewWorkspace({ projectManagerProps }) {
             <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl">Interview Preparation</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Practice explaining your project decisions, tradeoffs, and technical boundaries with focused, project-shaped questions.</p>
           </div>
-          <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex"><span className="h-2 w-2 rounded-full bg-indigo-400" />Presentation-only practice context</div>
+          <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex"><span className={`h-2 w-2 rounded-full ${isAnalyzed ? 'bg-emerald-400' : 'bg-indigo-400'}`} />{isAnalyzed ? 'Static analysis loaded' : 'Presentation-only practice context'}</div>
         </div>
 
-        <InterviewSummary current={questionIndex + 1} summary={interviewSummary} />
+        <InterviewSummary current={(questionIndex % questions.length) + 1} isAnalyzed={isAnalyzed} summary={summary} />
 
         <section aria-labelledby="current-question-heading" className="mt-7">
           <div className="mb-3 flex items-end justify-between gap-4">
             <div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">Practice prompt</p><h2 className="mt-1 text-sm font-semibold text-slate-200" id="current-question-heading">Current question</h2></div>
-            <span className="font-mono text-[10px] text-slate-600">LOCAL QUESTION SET</span>
+            <span className="font-mono text-[10px] text-slate-600">{isAnalyzed ? 'PROJECT-BASED PREPARATION' : 'LOCAL QUESTION SET'}</span>
           </div>
           <InterviewQuestionCard key={currentQuestion.id} question={currentQuestion} questionNumber={questionIndex + 1} />
 
           <div className="mt-4 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <button className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-indigo-400/40" onClick={() => setIsAnswerVisible((visible) => !visible)} type="button">
-              <Icon name="sparkles" size={15} />{isAnswerVisible ? 'Hide Example Answer' : 'Reveal Answer'}
+              <Icon name="sparkles" size={15} />{isAnswerVisible ? (isAnalyzed ? 'Hide Preparation Context' : 'Hide Example Answer') : (isAnalyzed ? 'Reveal Preparation Context' : 'Reveal Answer')}
             </button>
             <button className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-500 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-500/15 transition hover:bg-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-400/50" onClick={handleNextQuestion} type="button">
               Next Question <Icon name="arrowUpRight" size={15} />
             </button>
           </div>
-          {isAnswerVisible && <AnswerPanel question={currentQuestion} />}
+          {isAnswerVisible && <AnswerPanel isAnalyzed={isAnalyzed} question={currentQuestion} />}
         </section>
 
         <ProjectManager {...projectManagerProps} />
