@@ -2,9 +2,13 @@ import Icon from './Icon'
 import ProjectManager from './ProjectManager'
 import ImprovementCard from './ImprovementCard'
 import ImprovementSummary from './ImprovementSummary'
-import { improvementSuggestions, improvementSummary } from './improveData'
+import { getAnalysisImprovementSuggestions, getAnalysisImprovementSummary, improvementSuggestions, improvementSummary } from './improveData'
 
-function ImproveWorkspace({ projectManagerProps }) {
+function ImproveWorkspace({ analysis, projectManagerProps }) {
+  const isAnalyzed = Boolean(analysis)
+  const summary = isAnalyzed ? getAnalysisImprovementSummary(analysis) : improvementSummary
+  const suggestions = isAnalyzed ? getAnalysisImprovementSuggestions(analysis) : improvementSuggestions
+
   return (
     <main className="min-w-0 flex-1 bg-slate-950">
       <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6 sm:py-7 lg:px-10 lg:py-9">
@@ -22,12 +26,12 @@ function ImproveWorkspace({ projectManagerProps }) {
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Turn review context into practical engineering actions, with each suggestion tied to an example evidence path and expected benefit.</p>
           </div>
           <div className="hidden items-center gap-2 text-xs text-slate-600 sm:flex">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            Presentation-only improvement context
+            <span className={`h-2 w-2 rounded-full ${isAnalyzed ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            {isAnalyzed ? 'Static analysis loaded' : 'Presentation-only improvement context'}
           </div>
         </div>
 
-        <ImprovementSummary summary={improvementSummary} />
+        <ImprovementSummary isAnalyzed={isAnalyzed} summary={summary} />
 
         <section aria-labelledby="improvements-heading" className="mt-7">
           <div className="mb-3 flex items-end justify-between gap-4">
@@ -35,10 +39,10 @@ function ImproveWorkspace({ projectManagerProps }) {
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">Action ledger</p>
               <h2 className="mt-1 text-sm font-semibold text-slate-200" id="improvements-heading">Suggested improvements</h2>
             </div>
-            <span className="font-mono text-[10px] text-slate-600">{improvementSuggestions.length.toString().padStart(2, '0')} EXAMPLES</span>
+            <span className="font-mono text-[10px] text-slate-600">{isAnalyzed ? `${suggestions.length.toString().padStart(2, '0')} NEXT STEPS` : `${suggestions.length.toString().padStart(2, '0')} EXAMPLES`}</span>
           </div>
           <div className="grid gap-4 xl:grid-cols-2">
-            {improvementSuggestions.map((suggestion) => <ImprovementCard key={suggestion.title} suggestion={suggestion} />)}
+            {suggestions.map((suggestion) => <ImprovementCard key={suggestion.title} suggestion={suggestion} />)}
           </div>
         </section>
 

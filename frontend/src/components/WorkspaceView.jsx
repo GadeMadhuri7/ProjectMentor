@@ -10,7 +10,7 @@ function WorkspaceView({ analysis, analysisError, isAnalyzing, onAnalyze, projec
   if (stage === 'upload') return <UploadWorkspace analysis={analysis} analysisError={analysisError} isAnalyzing={isAnalyzing} onAnalyze={onAnalyze} {...workspaceProps} />
   if (stage === 'understand') return <ArchitectureWorkspace analysis={analysis} {...workspaceProps} />
   if (stage === 'review') return <ReviewWorkspace analysis={analysis} {...workspaceProps} />
-  if (stage === 'improve') return <ImproveWorkspace {...workspaceProps} />
+  if (stage === 'improve') return <ImproveWorkspace analysis={analysis} {...workspaceProps} />
   return <InterviewWorkspace {...workspaceProps} />
 }
 

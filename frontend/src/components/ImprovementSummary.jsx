@@ -20,7 +20,7 @@ const icons = {
   slate: 'activity',
 }
 
-function ImprovementSummary({ summary }) {
+function ImprovementSummary({ isAnalyzed, summary }) {
   return (
     <section aria-labelledby="improvement-summary-heading" className="mt-6">
       <div className="mb-3 flex items-center justify-between gap-4">
@@ -28,7 +28,7 @@ function ImprovementSummary({ summary }) {
           <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">Action pulse</p>
           <h2 className="mt-1 text-sm font-semibold text-slate-200" id="improvement-summary-heading">Improvement summary</h2>
         </div>
-        <span className="hidden rounded-full border border-slate-800 bg-slate-900/60 px-2.5 py-1 font-mono text-[10px] text-slate-600 sm:inline-flex">MOCK ACTIONS</span>
+        <span className="hidden rounded-full border border-slate-800 bg-slate-900/60 px-2.5 py-1 font-mono text-[10px] text-slate-600 sm:inline-flex">{isAnalyzed ? 'STATIC ANALYSIS' : 'MOCK ACTIONS'}</span>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         {summary.categories.map((item) => (
@@ -43,12 +43,12 @@ function ImprovementSummary({ summary }) {
         ))}
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-800 bg-slate-900/30 px-4 py-3">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">Priority queue</p>
-        {summary.priorities.map((priority) => (
-          <span className="inline-flex items-center gap-2" key={priority.label}>
-            <span className={`h-1.5 w-1.5 rounded-full ${priority.accent === 'rose' ? 'bg-rose-400' : priority.accent === 'amber' ? 'bg-amber-400' : 'bg-slate-500'}`} />
-            <span className="text-xs text-slate-500">{priority.label}</span>
-            <span className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${accentStyles[priority.accent]}`}>{priority.value}</span>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-600">{isAnalyzed ? 'Evidence basis' : 'Priority queue'}</p>
+        {(isAnalyzed ? summary.evidence : summary.priorities).map((item) => (
+          <span className="inline-flex items-center gap-2" key={item.label}>
+            <span className={`h-1.5 w-1.5 ${isAnalyzed ? 'rounded-full bg-indigo-400' : `rounded-full ${item.accent === 'rose' ? 'bg-rose-400' : item.accent === 'amber' ? 'bg-amber-400' : 'bg-slate-500'}`}`} />
+            <span className="text-xs text-slate-500">{item.label}</span>
+            <span className={`rounded-md border px-1.5 py-0.5 font-mono text-[10px] ${accentStyles[item.accent]}`}>{item.value}</span>
           </span>
         ))}
       </div>

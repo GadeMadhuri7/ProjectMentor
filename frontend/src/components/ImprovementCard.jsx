@@ -17,7 +17,7 @@ function ImprovementCard({ suggestion }) {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${categoryStyles[suggestion.categoryTone]}`}>{suggestion.category}</span>
-            <PriorityBadge tone={suggestion.priorityTone}>{suggestion.priority}</PriorityBadge>
+            {suggestion.priority && <PriorityBadge tone={suggestion.priorityTone}>{suggestion.priority}</PriorityBadge>}
           </div>
           <h3 className="mt-3 text-sm font-semibold text-slate-100">{suggestion.title}</h3>
           <p className="mt-1.5 text-xs leading-5 text-slate-500">{suggestion.description}</p>
