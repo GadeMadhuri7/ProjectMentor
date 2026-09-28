@@ -62,6 +62,7 @@ from app.services.retrieval_service import (
     retrieve_project_chunks,
 )
 from app.services.groq_service import (
+    MAX_GROQ_ERROR_BODY_BYTES,
     GroqChatProvider,
     GroqGenerationError,
 )
@@ -1011,12 +1012,103 @@ class GroqServiceTests(unittest.TestCase):
 
     def test_provider_failures_are_sanitized(self):
         provider = GroqChatProvider('private-token', 'fake-model', 'https://groq.example/v1')
-        with patch('app.services.groq_service.urlopen', side_effect=RuntimeError('private-token provider response')):
-            with self.assertRaises(GroqGenerationError) as error:
-                provider.complete('system', 'question', 'context')
+        user_question = 'private user question'
+        source_context = 'private source content'
+        with patch('app.services.groq_service.urlopen', side_effect=TimeoutError('private-token provider response')):
+            with self.assertLogs('app.services.groq_service', level='WARNING') as captured:
+                with self.assertRaises(GroqGenerationError) as error:
+                    provider.complete('system', user_question, source_context)
 
         self.assertNotIn('private-token', str(error.exception))
         self.assertNotIn('provider response', str(error.exception))
+        log_output = '\n'.join(captured.output)
+        self.assertIn('type=TimeoutError', log_output)
+        self.assertIn('timed out', log_output)
+        self.assertNotIn('private-token', log_output)
+        self.assertNotIn(user_question, log_output)
+        self.assertNotIn(source_context, log_output)
+
+    def test_http_error_logs_status_and_safe_category_without_response_secrets(self):
+        provider = GroqChatProvider('private-token', 'fake-model', 'https://groq.example/v1')
+        user_question = 'confidential project question'
+        source_context = 'confidential source context'
+        response_body = (
+            '{"error":"invalid api key private-token; request included '
+            'confidential project question and confidential source context"}'
+        ).encode('utf-8')
+        error = HTTPError(
+            'https://groq.example/v1/chat/completions',
+            401,
+            'Unauthorized',
+            {},
+            BytesIO(response_body),
+        )
+
+        with patch('app.services.groq_service.urlopen', side_effect=error):
+            with self.assertLogs('app.services.groq_service', level='WARNING') as captured:
+                with self.assertRaisesRegex(GroqGenerationError, r'^Groq request failed\.$'):
+                    provider.complete('system instruction', user_question, source_context)
+
+        log_output = '\n'.join(captured.output)
+        self.assertIn('status=401', log_output)
+        self.assertIn('authentication rejected', log_output)
+        self.assertNotIn('private-token', log_output)
+        self.assertNotIn(user_question, log_output)
+        self.assertNotIn(source_context, log_output)
+
+    def test_http_403_logs_generic_forbidden_message_without_reading_body(self):
+        class TrackingHTTPError(HTTPError):
+            def read(self, size=-1):
+                self.body_was_read = True
+                return super().read(size)
+
+        provider = GroqChatProvider('private-token', 'fake-model', 'https://groq.example/v1')
+        user_question = 'confidential project question'
+        source_context = 'confidential source context'
+        body = (
+            b'{"error":"invalid api key private-token; forbidden model; '
+            b'confidential project question; confidential source context"}'
+        )
+        error = TrackingHTTPError(
+            'https://groq.example/v1/chat/completions',
+            403,
+            'Forbidden',
+            {},
+            BytesIO(body),
+        )
+
+        with patch('app.services.groq_service.urlopen', side_effect=error):
+            with self.assertLogs('app.services.groq_service', level='WARNING') as captured:
+                with self.assertRaisesRegex(GroqGenerationError, r'^Groq request failed\.$'):
+                    provider.complete('system instruction', user_question, source_context)
+
+        self.assertFalse(getattr(error, 'body_was_read', False))
+        self.assertEqual(captured.output, ['WARNING:app.services.groq_service:Groq provider HTTP 403: forbidden response'])
+        log_output = '\n'.join(captured.output)
+        self.assertNotIn('private-token', log_output)
+        self.assertNotIn(user_question, log_output)
+        self.assertNotIn(source_context, log_output)
+
+    def test_http_error_body_read_is_strictly_bounded(self):
+        class TrackingHTTPError(HTTPError):
+            def read(self, size=-1):
+                self.read_size = size
+                return super().read(size)
+
+        provider = GroqChatProvider('private-token', 'fake-model', 'https://groq.example/v1')
+        error = TrackingHTTPError(
+            'https://groq.example/v1/chat/completions',
+            503,
+            'Unavailable',
+            {},
+            BytesIO(b'x' * (MAX_GROQ_ERROR_BODY_BYTES * 4)),
+        )
+        with patch('app.services.groq_service.urlopen', side_effect=error):
+            with self.assertLogs('app.services.groq_service', level='WARNING'):
+                with self.assertRaises(GroqGenerationError):
+                    provider.complete('system', 'question', 'context')
+
+        self.assertEqual(error.read_size, MAX_GROQ_ERROR_BODY_BYTES)
 
 
 class RagServiceTests(unittest.TestCase):
