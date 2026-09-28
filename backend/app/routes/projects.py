@@ -2,12 +2,13 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Project
+from app.models import Project, ProjectAnalysis
 from app.schemas import ProjectCreate, ProjectResponse
 from app.services.project_analyzer import analyze_project, extract_zip_safely
 
@@ -32,12 +33,26 @@ def create_project(project_data: ProjectCreate, db: Session = Depends(get_db)):
 
 
 @router.post('/analyze')
-async def analyze_uploaded_project(file: UploadFile = File(...)):
+async def analyze_uploaded_project(
+    file: UploadFile = File(...),
+    project_id: int = Form(...),
+    db: Session = Depends(get_db),
+):
     if not file.filename or Path(file.filename).suffix.lower() != '.zip':
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Upload a ZIP archive.')
 
     archive_path: Path | None = None
     try:
+        try:
+            project = db.get(Project, project_id)
+        except SQLAlchemyError:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='The project could not be loaded.',
+            ) from None
+        if project is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project not found.')
+
         with tempfile.NamedTemporaryFile(delete=False, suffix='.zip') as temporary_archive:
             archive_path = Path(temporary_archive.name)
             total_size = 0
@@ -57,7 +72,22 @@ async def analyze_uploaded_project(file: UploadFile = File(...)):
             extracted_path = Path(temporary_directory)
             extract_zip_safely(archive_path, extracted_path)
             project_root = _find_project_root(extracted_path)
-            return analyze_project(project_root, Path(file.filename).stem)
+            analysis_data = analyze_project(project_root, Path(file.filename).stem)
+        try:
+            analysis = db.get(ProjectAnalysis, project_id)
+            if analysis is None:
+                analysis = ProjectAnalysis(project_id=project_id, analysis_data=analysis_data)
+                db.add(analysis)
+            else:
+                analysis.analysis_data = analysis_data
+            db.commit()
+        except SQLAlchemyError:
+            db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail='Project analysis could not be saved.',
+            ) from None
+        return analysis_data
     except HTTPException:
         raise
     except (OSError, ValueError, zipfile.BadZipFile):
@@ -66,6 +96,20 @@ async def analyze_uploaded_project(file: UploadFile = File(...)):
         await file.close()
         if archive_path:
             archive_path.unlink(missing_ok=True)
+
+
+@router.get('/{project_id}/analysis')
+def get_project_analysis(project_id: int, db: Session = Depends(get_db)):
+    try:
+        analysis = db.get(ProjectAnalysis, project_id)
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Project analysis could not be retrieved.',
+        ) from None
+    if analysis is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project analysis not found.')
+    return analysis.analysis_data
 
 
 def _find_project_root(extracted_path: Path) -> Path:

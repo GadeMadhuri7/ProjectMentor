@@ -64,10 +64,16 @@ function App() {
   }
 
   async function handleAnalyze(file) {
+    const activeProject = projects[0]
+    if (!activeProject) {
+      setAnalysisError('Create a project before analyzing an archive.')
+      return
+    }
+
     try {
       setIsAnalyzing(true)
       setAnalysisError('')
-      setAnalysis(await analyzeProject(file))
+      setAnalysis(await analyzeProject(file, activeProject.id))
       setActiveStage('understand')
     } catch (requestError) {
       setAnalysisError(requestError.message)

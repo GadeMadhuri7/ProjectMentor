@@ -30,9 +30,10 @@ export function checkHealth() {
   return request('/health')
 }
 
-export function analyzeProject(file) {
+export function analyzeProject(file, projectId) {
   const formData = new FormData()
   formData.append('file', file)
+  formData.append('project_id', projectId)
   return request('/projects/analyze', {
     method: 'POST',
     headers: {},
