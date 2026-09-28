@@ -13,7 +13,14 @@ from sqlalchemy.orm import Session
 from app.database import Base
 from app.models import Project, ProjectAnalysis
 from app.routes.projects import analyze_uploaded_project, get_project_analysis
-from app.services.project_analyzer import analyze_project, extract_zip_safely
+from app.services.project_analyzer import (
+    MAX_SOURCE_CONTENT_BYTES,
+    MAX_SOURCE_CONTENT_PER_FILE_BYTES,
+    MAX_SOURCE_FILES_INSPECTED,
+    MAX_SOURCE_FILE_BYTES,
+    analyze_project,
+    extract_zip_safely,
+)
 
 
 class ProjectAnalyzerTests(unittest.TestCase):
@@ -52,6 +59,7 @@ class ProjectAnalyzerTests(unittest.TestCase):
             for field in (
                 'project_name', 'total_files', 'total_directories', 'languages',
                 'technologies', 'important_files', 'structure', 'analysis_warnings',
+                'project_inventory', 'source_files',
             ):
                 self.assertIn(field, result)
 
@@ -153,7 +161,7 @@ class ProjectAnalysisPersistenceTests(unittest.TestCase):
             {
                 'project_name', 'total_files', 'total_directories', 'languages',
                 'technologies', 'important_files', 'structure', 'analysis_warnings',
-                'project_inventory',
+                'project_inventory', 'source_files',
             },
         )
         self.assertEqual(result['project_inventory']['source_files'], ['source/main.py'])
@@ -180,6 +188,90 @@ class ProjectAnalysisPersistenceTests(unittest.TestCase):
             self._analyze_archive(9999, {'main.py': ''})
 
         self.assertEqual(error.exception.status_code, 404)
+
+
+class SourceInspectionTests(unittest.TestCase):
+    def test_inspects_supported_source_files_with_metadata_and_content(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / 'main.py').write_text('first line\nsecond line\n', encoding='utf-8')
+            (root / 'app.tsx').write_text('const view = <div />\n', encoding='utf-8')
+            (root / 'notes.md').write_text('# Notes\n', encoding='utf-8')
+            (root / 'image.png').write_bytes(b'\x89PNG\x00')
+            (root / 'archive.xyz').write_text('not a supported source file', encoding='utf-8')
+
+            result = analyze_project(root)
+            inspected = {item['path']: item for item in result['source_files']}
+
+            self.assertEqual(set(inspected), {'app.tsx', 'main.py', 'notes.md'})
+            self.assertEqual(inspected['main.py']['language'], 'Python')
+            self.assertEqual(inspected['main.py']['size_bytes'], (root / 'main.py').stat().st_size)
+            self.assertEqual(inspected['main.py']['line_count'], 2)
+            self.assertEqual(inspected['main.py']['content'], (root / 'main.py').read_bytes().decode('utf-8'))
+            self.assertEqual(inspected['notes.md']['language'], None)
+            self.assertIn('project_inventory', result)
+
+    def test_marks_binary_invalid_encoding_and_oversized_files_without_content(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / 'binary.py').write_bytes(b'print(1)\x01')
+            (root / 'invalid.js').write_bytes(b'\xff\xfe')
+            large_content = b'x' * (MAX_SOURCE_FILE_BYTES + 1)
+            (root / 'large.py').write_bytes(large_content)
+
+            result = analyze_project(root)
+            inspected = {item['path']: item for item in result['source_files']}
+
+            self.assertEqual(inspected['binary.py']['status'], 'binary')
+            self.assertEqual(inspected['invalid.js']['status'], 'invalid_encoding')
+            self.assertEqual(inspected['large.py']['status'], 'too_large')
+            self.assertEqual(inspected['large.py']['size_bytes'], len(large_content))
+            self.assertIsNone(inspected['large.py']['content'])
+            self.assertIsNone(inspected['large.py']['line_count'])
+
+    def test_ignored_directories_are_not_inspected(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            ignored_directory = root / 'node_modules'
+            ignored_directory.mkdir()
+            (ignored_directory / 'dependency.py').write_text('ignored', encoding='utf-8')
+            (root / 'kept.py').write_text('kept', encoding='utf-8')
+
+            result = analyze_project(root)
+
+            self.assertEqual([item['path'] for item in result['source_files']], ['kept.py'])
+
+    def test_file_count_and_returned_content_are_bounded_deterministically(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            for index in reversed(range(MAX_SOURCE_FILES_INSPECTED + 5)):
+                (root / f'{index:03}.py').write_text('x\n', encoding='utf-8')
+
+            result = analyze_project(root)
+
+            inspected = result['source_files']
+            self.assertEqual(len(inspected), MAX_SOURCE_FILES_INSPECTED)
+            self.assertEqual(inspected[0]['path'], '000.py')
+            self.assertEqual(inspected[-1]['path'], f'{MAX_SOURCE_FILES_INSPECTED - 1:03}.py')
+            self.assertTrue(any('5 source files were not inspected' in warning for warning in result['analysis_warnings']))
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            for index in range(20):
+                (root / f'{index:02}.py').write_text(
+                    'x' * (MAX_SOURCE_CONTENT_PER_FILE_BYTES + 1), encoding='utf-8',
+                )
+
+            result = analyze_project(root)
+            content_bytes = sum(
+                len(item['content'].encode('utf-8'))
+                for item in result['source_files']
+                if item['content'] is not None
+            )
+
+            self.assertLessEqual(content_bytes, MAX_SOURCE_CONTENT_BYTES)
+            self.assertTrue(any(item['status'] == 'content_truncated' for item in result['source_files']))
+            self.assertTrue(any(item['status'] == 'content_limit' for item in result['source_files']))
 
 
 if __name__ == '__main__':

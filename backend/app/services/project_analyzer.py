@@ -42,6 +42,11 @@ MAX_MANIFEST_BYTES = 512 * 1024
 MAX_STRUCTURE_ITEMS = 1000
 MAX_ARCHIVE_MEMBERS = 5000
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+MAX_SOURCE_FILES_INSPECTED = 100
+MAX_SOURCE_FILE_BYTES = 128 * 1024
+MAX_SOURCE_CONTENT_BYTES = 512 * 1024
+MAX_SOURCE_CONTENT_PER_FILE_BYTES = 32 * 1024
+SOURCE_TEXT_EXTENSIONS = frozenset(LANGUAGE_EXTENSIONS) | DOCUMENTATION_EXTENSIONS
 
 
 def should_ignore(path: Path, root: Path) -> bool:
@@ -220,6 +225,69 @@ def build_project_structure(root: Path, files: list[dict]) -> dict:
     }
 
 
+def inspect_source_files(root: Path, files: list[dict]) -> tuple[list[dict], int, int]:
+    candidates = sorted(
+        (item for item in files if item['extension'] in SOURCE_TEXT_EXTENSIONS),
+        key=lambda item: item['path'],
+    )
+    selected = candidates[:MAX_SOURCE_FILES_INSPECTED]
+    inspected: list[dict] = []
+    returned_content_bytes = 0
+
+    for item in selected:
+        path = root / item['path']
+        record = {
+            'path': item['path'],
+            'language': detect_language(item['path']),
+            'size_bytes': item['size'],
+            'line_count': None,
+            'content': None,
+            'status': 'inspected',
+        }
+        try:
+            with path.open('rb') as source_file:
+                raw_content = source_file.read(MAX_SOURCE_FILE_BYTES + 1)
+        except OSError:
+            record['status'] = 'unreadable'
+            inspected.append(record)
+            continue
+
+        if len(raw_content) > MAX_SOURCE_FILE_BYTES:
+            record['status'] = 'too_large'
+            inspected.append(record)
+            continue
+        if b'\x00' in raw_content:
+            record['status'] = 'binary'
+            inspected.append(record)
+            continue
+        try:
+            content = raw_content.decode('utf-8')
+        except UnicodeDecodeError:
+            record['status'] = 'invalid_encoding'
+            inspected.append(record)
+            continue
+        if any(ord(character) < 32 and character not in '\t\n\r\f' for character in content):
+            record['status'] = 'binary'
+            inspected.append(record)
+            continue
+
+        record['line_count'] = len(content.splitlines())
+        if returned_content_bytes >= MAX_SOURCE_CONTENT_BYTES:
+            record['status'] = 'content_limit'
+        else:
+            content_bytes = content.encode('utf-8')
+            remaining_total = MAX_SOURCE_CONTENT_BYTES - returned_content_bytes
+            content_limit = min(MAX_SOURCE_CONTENT_PER_FILE_BYTES, remaining_total)
+            if len(content_bytes) > content_limit:
+                content = content_bytes[:content_limit].decode('utf-8', errors='ignore')
+                record['status'] = 'content_truncated'
+            returned_content_bytes += len(content.encode('utf-8'))
+            record['content'] = content
+        inspected.append(record)
+
+    return inspected, len(candidates), returned_content_bytes
+
+
 def analyze_project(root: Path, project_name: str | None = None) -> dict:
     root = root.resolve()
     files, warnings, ignored_files = discover_files(root)
@@ -233,6 +301,12 @@ def analyze_project(root: Path, project_name: str | None = None) -> dict:
         for name, count in sorted(language_counts.items(), key=lambda entry: (-entry[1], entry[0]))
     ]
     directories = {str(Path(item['path']).parent) for item in files if str(Path(item['path']).parent) != '.'}
+    source_files, source_file_count, _ = inspect_source_files(root, files)
+    if source_file_count > len(source_files):
+        warnings.append(
+            f'Source inspection is capped at {MAX_SOURCE_FILES_INSPECTED} files; '
+            f'{source_file_count - len(source_files)} source files were not inspected.'
+        )
     return {
         'project_name': project_name or root.name,
         'total_files': len(files),
@@ -242,5 +316,6 @@ def analyze_project(root: Path, project_name: str | None = None) -> dict:
         'important_files': find_important_files(files),
         'structure': build_project_structure(root, files),
         'project_inventory': build_project_inventory(files, ignored_files),
+        'source_files': source_files,
         'analysis_warnings': warnings,
     }
