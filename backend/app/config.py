@@ -19,3 +19,9 @@ EMBEDDING_API_BASE_URL = os.getenv(
     'EMBEDDING_API_BASE_URL',
     'https://api.openai.com/v1',
 ).rstrip('/')
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '')
+GROQ_MODEL = os.getenv('GROQ_MODEL', '').strip()
+GROQ_API_BASE_URL = os.getenv(
+    'GROQ_API_BASE_URL',
+    'https://api.groq.com/openai/v1',
+).rstrip('/')

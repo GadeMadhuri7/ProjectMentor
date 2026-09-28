@@ -27,3 +27,14 @@ class ProjectRetrievalRequest(BaseModel):
         if not value.strip():
             raise ValueError('Question must not be empty.')
         return value
+
+
+class ProjectAskRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+
+    @field_validator('question')
+    @classmethod
+    def question_must_not_be_whitespace(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError('Question must not be empty.')
+        return value
