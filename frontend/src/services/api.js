@@ -40,3 +40,10 @@ export function analyzeProject(file, projectId) {
     body: formData,
   })
 }
+
+export function askProjectAssistant(projectId, question, conversation) {
+  return request(`/projects/${projectId}/assistant`, {
+    method: 'POST',
+    body: JSON.stringify({ question, conversation }),
+  })
+}

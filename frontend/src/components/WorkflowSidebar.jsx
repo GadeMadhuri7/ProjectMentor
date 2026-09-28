@@ -6,6 +6,7 @@ const workflowSteps = [
   { id: 'review', number: '3', label: 'Review Findings', icon: 'activity' },
   { id: 'improve', number: '4', label: 'Improve Suggestions', icon: 'sparkles' },
   { id: 'interview', number: '5', label: 'Interview Prep', icon: 'user' },
+  { id: 'assistant', number: '6', label: 'AI Assistant', icon: 'sparkles' },
 ]
 
 function WorkflowSidebar({ activeStage, isOpen, onNavigate }) {
@@ -23,9 +24,10 @@ function WorkflowSidebar({ activeStage, isOpen, onNavigate }) {
         </div>
 
         <nav aria-label="Analysis workflow" className="flex gap-2 overflow-x-auto pb-1 lg:block lg:space-y-1 lg:overflow-visible">
-          {workflowSteps.map((step) => {
+          {workflowSteps.map((step, stepIndex) => {
             const isActive = step.id === activeStage
-            const isComplete = !isActive && Number(step.number) < Number(activeStage === 'upload' ? 1 : activeStage === 'understand' ? 2 : activeStage === 'review' ? 3 : activeStage === 'improve' ? 4 : 5)
+            const activeIndex = workflowSteps.findIndex((workflowStep) => workflowStep.id === activeStage)
+            const isComplete = !isActive && stepIndex < activeIndex
             return (
               <button
                 aria-current={isActive ? 'step' : undefined}
