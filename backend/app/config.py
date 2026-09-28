@@ -12,3 +12,10 @@ DATABASE_URL = os.getenv(
     'mysql+pymysql://projectmentor:change-me@127.0.0.1:3306/projectmentor',
 )
 FRONTEND_ORIGIN = os.getenv('FRONTEND_ORIGIN', 'http://localhost:5173')
+EMBEDDING_PROVIDER = os.getenv('EMBEDDING_PROVIDER', '').strip().lower()
+EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', '').strip()
+EMBEDDING_API_KEY = os.getenv('EMBEDDING_API_KEY', '')
+EMBEDDING_API_BASE_URL = os.getenv(
+    'EMBEDDING_API_BASE_URL',
+    'https://api.openai.com/v1',
+).rstrip('/')

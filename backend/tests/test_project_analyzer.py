@@ -5,14 +5,25 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.database import Base
-from app.models import Project, ProjectAnalysis
-from app.routes.projects import analyze_uploaded_project, get_project_analysis
+from app.models import Project, ProjectAnalysis, ProjectChunkEmbedding
+from app.routes.projects import (
+    analyze_uploaded_project,
+    generate_project_embeddings,
+    get_project_analysis,
+)
+from app.services.embedding_service import (
+    EMBEDDING_BATCH_SIZE,
+    EmbeddingGenerationError,
+    OpenAICompatibleEmbeddingProvider,
+    generate_embeddings,
+)
 from app.services.project_analyzer import (
     MAX_SOURCE_CONTENT_BYTES,
     MAX_SOURCE_CONTENT_PER_FILE_BYTES,
@@ -381,6 +392,225 @@ class SourceChunkingTests(unittest.TestCase):
         self.assertLessEqual(total_content_bytes, MAX_SOURCE_CHUNK_CONTENT_BYTES)
         self.assertEqual(len(warnings), 1)
         self.assertIn('response limit', warnings[0])
+
+
+class FakeEmbeddingProvider:
+    name = 'fake-provider'
+    model = 'fake-model-v1'
+
+    def __init__(self, failure=None):
+        self.calls = []
+        self.failure = failure
+
+    def embed_batch(self, texts):
+        self.calls.append(list(texts))
+        if self.failure:
+            raise RuntimeError(self.failure)
+        return [[float(len(text)), float(sum(map(ord, text)))] for text in texts]
+
+
+class EmbeddingServiceTests(unittest.TestCase):
+    def test_provider_requires_https_configuration(self):
+        with self.assertRaises(EmbeddingGenerationError):
+            OpenAICompatibleEmbeddingProvider('model', 'placeholder-key', 'http://provider.test/v1')
+
+    def test_generation_is_deterministic_and_skips_invalid_chunks(self):
+        chunks = [
+            {'path': 'z.py', 'chunk_index': 0, 'start_line': 1, 'end_line': 1, 'content': 'z'},
+            {'path': 'a.py', 'chunk_index': 0, 'start_line': 3, 'end_line': 3, 'content': 'abc'},
+            {'path': 'empty.py', 'chunk_index': 0, 'start_line': 1, 'end_line': 1, 'content': '  '},
+            {'path': 'bad.py', 'chunk_index': -1, 'start_line': 0, 'end_line': 1, 'content': 'bad'},
+            None,
+        ]
+        first_provider = FakeEmbeddingProvider()
+        second_provider = FakeEmbeddingProvider()
+
+        first = generate_embeddings(chunks, provider=first_provider)
+        second = generate_embeddings(list(reversed(chunks)), provider=second_provider)
+
+        self.assertEqual(first, second)
+        self.assertEqual([record['path'] for record in first], ['a.py', 'z.py'])
+        self.assertEqual(first[0]['dimension'], 2)
+        self.assertEqual(first[0]['provider'], 'fake-provider')
+        self.assertEqual(first[0]['model'], 'fake-model-v1')
+        self.assertEqual(len(first_provider.calls), 1)
+
+    def test_provider_requests_are_batched(self):
+        provider = FakeEmbeddingProvider()
+        chunks = [
+            {
+                'path': f'{index:02}.py',
+                'chunk_index': 0,
+                'start_line': 1,
+                'end_line': 1,
+                'content': f'chunk-{index}',
+            }
+            for index in range(EMBEDDING_BATCH_SIZE + 1)
+        ]
+
+        records = generate_embeddings(chunks, provider=provider)
+
+        self.assertEqual(len(records), EMBEDDING_BATCH_SIZE + 1)
+        self.assertEqual([len(batch) for batch in provider.calls], [EMBEDDING_BATCH_SIZE, 1])
+
+    def test_embedding_work_rejects_inputs_over_step_16_limits(self):
+        provider = FakeEmbeddingProvider()
+        too_many_chunks = [
+            {
+                'path': f'{index:03}.py',
+                'chunk_index': 0,
+                'start_line': 1,
+                'end_line': 1,
+                'content': 'x',
+            }
+            for index in range(MAX_SOURCE_CHUNKS + 1)
+        ]
+
+        with self.assertRaises(EmbeddingGenerationError):
+            generate_embeddings(too_many_chunks, provider=provider)
+        self.assertEqual(provider.calls, [])
+
+        too_much_content = [
+            {
+                'path': f'{index}.py',
+                'chunk_index': 0,
+                'start_line': 1,
+                'end_line': 1,
+                'content': 'x' * (MAX_SOURCE_CHUNK_CONTENT_BYTES // 2 + 1),
+            }
+            for index in range(2)
+        ]
+        with self.assertRaises(EmbeddingGenerationError):
+            generate_embeddings(too_much_content, provider=provider)
+        self.assertEqual(provider.calls, [])
+
+    def test_provider_failure_is_sanitized(self):
+        provider = FakeEmbeddingProvider(failure='private-api-key')
+
+        with self.assertRaises(EmbeddingGenerationError) as error:
+            generate_embeddings([{
+                'path': 'app.py', 'chunk_index': 0, 'start_line': 1,
+                'end_line': 1, 'content': 'valid',
+            }], provider=provider)
+
+        self.assertNotIn('private-api-key', str(error.exception))
+
+
+class ProjectEmbeddingTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine('sqlite:///:memory:')
+        Base.metadata.create_all(self.engine)
+        self.db = Session(self.engine)
+        self.project = Project(name='embedding project')
+        self.other_project = Project(name='other project')
+        self.db.add_all([self.project, self.other_project])
+        self.db.commit()
+        self.db.refresh(self.project)
+        self.db.refresh(self.other_project)
+        self.chunks = [
+            {
+                'path': 'src/app.py',
+                'language': 'Python',
+                'chunk_index': 0,
+                'start_line': 1,
+                'end_line': 2,
+                'content': 'line one\nline two',
+            },
+            {
+                'path': 'empty.py',
+                'language': 'Python',
+                'chunk_index': 0,
+                'start_line': 1,
+                'end_line': 1,
+                'content': '',
+            },
+            {'path': 'malformed.py', 'content': 'missing required metadata'},
+        ]
+        self.db.add(ProjectAnalysis(
+            project_id=self.project.id,
+            analysis_data={'project_name': 'embedding project', 'source_chunks': self.chunks},
+        ))
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def _generate_with(self, provider):
+        with patch(
+            'app.routes.projects.generate_embeddings',
+            side_effect=lambda chunks: generate_embeddings(chunks, provider=provider),
+        ):
+            return generate_project_embeddings(self.project.id, self.db)
+
+    def test_persists_vectors_with_project_and_chunk_metadata(self):
+        response = self._generate_with(FakeEmbeddingProvider())
+
+        stored = self.db.query(ProjectChunkEmbedding).filter_by(project_id=self.project.id).all()
+        other_project_rows = self.db.query(ProjectChunkEmbedding).filter_by(
+            project_id=self.other_project.id,
+        ).all()
+        self.assertEqual(response['embedding_count'], 1)
+        self.assertEqual(response['dimensions'], [2])
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(other_project_rows, [])
+        self.assertEqual(stored[0].source_path, 'src/app.py')
+        self.assertEqual(stored[0].chunk_index, 0)
+        self.assertEqual((stored[0].start_line, stored[0].end_line), (1, 2))
+        self.assertEqual(stored[0].provider, 'fake-provider')
+        self.assertEqual(stored[0].model, 'fake-model-v1')
+        self.assertEqual(stored[0].dimension, len(stored[0].vector))
+
+    def test_provider_failure_keeps_existing_rows_and_hides_secrets(self):
+        previous = ProjectChunkEmbedding(
+            project_id=self.project.id,
+            source_path='previous.py',
+            chunk_index=0,
+            start_line=1,
+            end_line=1,
+            provider='old-provider',
+            model='old-model',
+            dimension=2,
+            vector=[0.1, 0.2],
+        )
+        self.db.add(previous)
+        self.db.commit()
+
+        with patch(
+            'app.routes.projects.generate_embeddings',
+            side_effect=EmbeddingGenerationError('credential-must-not-leak'),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                generate_project_embeddings(self.project.id, self.db)
+
+        self.assertEqual(error.exception.status_code, 502)
+        self.assertNotIn('credential-must-not-leak', str(error.exception.detail))
+        rows = self.db.query(ProjectChunkEmbedding).filter_by(project_id=self.project.id).all()
+        self.assertEqual([row.source_path for row in rows], ['previous.py'])
+
+    def test_reanalysis_clears_previous_vectors_before_the_next_embedding_run(self):
+        self._generate_with(FakeEmbeddingProvider())
+        first_rows = self.db.query(ProjectChunkEmbedding).filter_by(project_id=self.project.id).all()
+        self.assertEqual(len(first_rows), 1)
+
+        archive = BytesIO()
+        with zipfile.ZipFile(archive, 'w') as zip_file:
+            zip_file.writestr('replacement/main.py', 'print("new source")\n')
+        archive.seek(0)
+        asyncio.run(analyze_uploaded_project(
+            UploadFile(archive, filename='replacement.zip'), self.project.id, self.db,
+        ))
+
+        self.assertEqual(
+            self.db.query(ProjectChunkEmbedding).filter_by(project_id=self.project.id).count(),
+            0,
+        )
+        self._generate_with(FakeEmbeddingProvider())
+        replacement_rows = self.db.query(ProjectChunkEmbedding).filter_by(
+            project_id=self.project.id,
+        ).all()
+        self.assertEqual(len(replacement_rows), 1)
+        self.assertEqual(replacement_rows[0].source_path, 'main.py')
 
 
 if __name__ == '__main__':
