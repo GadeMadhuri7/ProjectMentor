@@ -88,6 +88,7 @@ class GroqChatProvider:
             headers={
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json',
+                'User-Agent': 'ProjectMentor/1.0',
             },
             method='POST',
         )

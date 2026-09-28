@@ -832,6 +832,7 @@ class GroqServiceTests(unittest.TestCase):
         self.assertEqual(answer, 'Grounded answer.')
         self.assertEqual(request.full_url, 'https://api.groq.com/openai/v1/chat/completions')
         self.assertEqual(request.get_header('Authorization'), 'Bearer placeholder-secret')
+        self.assertEqual(request.get_header('User-agent'), 'ProjectMentor/1.0')
         self.assertEqual(payload['messages'][0], {'role': 'system', 'content': 'trusted system policy'})
         self.assertEqual(payload['messages'][1]['role'], 'user')
         self.assertIn('user question', payload['messages'][1]['content'])
