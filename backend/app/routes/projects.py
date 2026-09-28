@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Project, ProjectAnalysis, ProjectChunkEmbedding
-from app.schemas import ProjectAskRequest, ProjectCreate, ProjectResponse, ProjectRetrievalRequest
+from app.schemas import (
+    ProjectAskRequest,
+    ProjectAssistantRequest,
+    ProjectCreate,
+    ProjectResponse,
+    ProjectRetrievalRequest,
+)
+from app.services.assistant_service import ask_project_assistant
 from app.services.embedding_service import (
     EmbeddingGenerationError,
     generate_embeddings,
@@ -267,6 +274,47 @@ def ask_project_question(
         ) from None
     except ValueError as error:
         detail = 'Question is too long.' if 'too long' in str(error) else 'Question must not be empty.'
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from None
+
+
+@router.post('/{project_id}/assistant')
+def assist_with_project(
+    project_id: int,
+    request: ProjectAssistantRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        return ask_project_assistant(
+            db,
+            project_id,
+            request.question,
+            [message.model_dump() for message in request.conversation],
+        )
+    except ProjectNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project not found.') from None
+    except EmbeddingGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='Question embedding could not be generated with the configured provider.',
+        ) from None
+    except GroqGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='A grounded project answer could not be generated.',
+        ) from None
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Project assistant request could not be processed.',
+        ) from None
+    except ValueError as error:
+        message = str(error)
+        if 'conversation' in message.lower():
+            detail = 'Conversation is invalid or exceeds configured limits.'
+        elif 'too long' in message:
+            detail = 'Question is too long.'
+        else:
+            detail = 'Question must not be empty.'
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail) from None
 
 
