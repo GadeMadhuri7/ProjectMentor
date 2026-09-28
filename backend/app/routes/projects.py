@@ -9,9 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import Project, ProjectAnalysis, ProjectChunkEmbedding
-from app.schemas import ProjectCreate, ProjectResponse
+from app.schemas import ProjectCreate, ProjectResponse, ProjectRetrievalRequest
 from app.services.embedding_service import EmbeddingGenerationError, generate_embeddings
 from app.services.project_analyzer import analyze_project, extract_zip_safely
+from app.services.retrieval_service import ProjectNotFoundError, retrieve_project_chunks
 
 
 router = APIRouter(prefix='/projects', tags=['projects'])
@@ -201,6 +202,36 @@ def generate_project_embeddings(project_id: int, db: Session = Depends(get_db)):
         'project_id': project_id,
         'embedding_count': len(embeddings),
         'dimensions': sorted({embedding['dimension'] for embedding in embeddings}),
+    }
+
+
+@router.post('/{project_id}/retrieve')
+def retrieve_project_analysis(
+    project_id: int,
+    request: ProjectRetrievalRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        results = retrieve_project_chunks(db, project_id, request.question, request.top_k)
+    except ProjectNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Project not found.') from None
+    except EmbeddingGenerationError:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail='Question embedding could not be generated with the configured provider.',
+        ) from None
+    except SQLAlchemyError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail='Project retrieval could not be completed.',
+        ) from None
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail='Question must not be empty.') from None
+
+    return {
+        'project_id': project_id,
+        'question': request.question,
+        'results': results,
     }
 
 

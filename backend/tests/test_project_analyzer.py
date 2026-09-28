@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException, UploadFile
+from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -17,7 +18,9 @@ from app.routes.projects import (
     analyze_uploaded_project,
     generate_project_embeddings,
     get_project_analysis,
+    retrieve_project_analysis,
 )
+from app.schemas import ProjectRetrievalRequest
 from app.services.embedding_service import (
     EMBEDDING_BATCH_SIZE,
     EmbeddingGenerationError,
@@ -36,6 +39,12 @@ from app.services.project_analyzer import (
     analyze_project,
     chunk_source_files,
     extract_zip_safely,
+)
+from app.services.retrieval_service import (
+    MAX_RETRIEVAL_TOP_K,
+    ProjectNotFoundError,
+    cosine_similarity,
+    retrieve_project_chunks,
 )
 
 
@@ -611,6 +620,161 @@ class ProjectEmbeddingTests(unittest.TestCase):
         ).all()
         self.assertEqual(len(replacement_rows), 1)
         self.assertEqual(replacement_rows[0].source_path, 'main.py')
+
+
+class CosineSimilarityTests(unittest.TestCase):
+    def test_identical_and_orthogonal_vectors(self):
+        self.assertAlmostEqual(cosine_similarity([1, 2, 3], [1, 2, 3]), 1.0)
+        self.assertAlmostEqual(cosine_similarity([1, 0], [0, 1]), 0.0)
+
+    def test_zero_vectors_and_dimension_mismatch_are_safe(self):
+        self.assertEqual(cosine_similarity([0, 0], [1, 2]), 0.0)
+        self.assertEqual(cosine_similarity([1, 2], [1]), 0.0)
+        self.assertEqual(cosine_similarity([1, 2], [1, 'invalid']), 0.0)
+        self.assertEqual(cosine_similarity([1e308], [1e308]), 0.0)
+
+
+class ProjectRetrievalTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine('sqlite:///:memory:')
+        Base.metadata.create_all(self.engine)
+        self.db = Session(self.engine)
+        self.project = Project(name='retrieval project')
+        self.other_project = Project(name='isolated project')
+        self.db.add_all([self.project, self.other_project])
+        self.db.commit()
+        self.db.refresh(self.project)
+        self.db.refresh(self.other_project)
+        self.chunks = [
+            {
+                'path': 'src/z.py', 'language': 'Python', 'chunk_index': 0,
+                'start_line': 10, 'end_line': 20, 'content': 'less relevant source',
+            },
+            {
+                'path': 'src/a.py', 'language': 'Python', 'chunk_index': 1,
+                'start_line': 21, 'end_line': 30, 'content': 'most relevant source',
+            },
+            {
+                'path': 'src/a.py', 'language': 'Python', 'chunk_index': 0,
+                'start_line': 1, 'end_line': 10, 'content': 'tie source',
+            },
+        ]
+        self.db.add_all([
+            ProjectAnalysis(
+                project_id=self.project.id,
+                analysis_data={'source_chunks': self.chunks},
+            ),
+            ProjectAnalysis(
+                project_id=self.other_project.id,
+                analysis_data={'source_chunks': [{
+                    'path': 'secret.py', 'chunk_index': 0,
+                    'start_line': 1, 'end_line': 1, 'content': 'other project content',
+                }]},
+            ),
+        ])
+        self.db.add_all([
+            self._embedding(self.project.id, self.chunks[0], [0, 1]),
+            self._embedding(self.project.id, self.chunks[1], [1, 0]),
+            self._embedding(self.project.id, self.chunks[2], [1, 0]),
+            self._embedding(self.other_project.id, {
+                'path': 'secret.py', 'chunk_index': 0,
+                'start_line': 1, 'end_line': 1,
+            }, [1, 0]),
+        ])
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    @staticmethod
+    def _embedding(project_id, chunk, vector):
+        return ProjectChunkEmbedding(
+            project_id=project_id,
+            source_path=chunk['path'],
+            chunk_index=chunk['chunk_index'],
+            start_line=chunk['start_line'],
+            end_line=chunk['end_line'],
+            provider='test-provider',
+            model='test-model',
+            dimension=len(vector),
+            vector=vector,
+        )
+
+    def test_retrieval_ranks_top_k_and_preserves_chunk_metadata(self):
+        question_vector = [1, 0]
+        with patch('app.services.retrieval_service.generate_embedding', return_value=question_vector):
+            result = retrieve_project_chunks(
+                self.db, self.project.id, 'How does this work?', top_k=2,
+            )
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual([item['path'] for item in result], ['src/a.py', 'src/a.py'])
+        self.assertEqual([item['chunk_index'] for item in result], [0, 1])
+        self.assertEqual([item['similarity'] for item in result], [1.0, 1.0])
+        self.assertEqual(result[0]['content'], 'tie source')
+        self.assertEqual((result[0]['start_line'], result[0]['end_line']), (1, 10))
+        self.assertNotIn('secret.py', [item['path'] for item in result])
+
+    def test_different_similarity_sorts_descending(self):
+        with patch('app.services.retrieval_service.generate_embedding', return_value=[1, 0]):
+            result = retrieve_project_chunks(
+                self.db, self.project.id, 'question', top_k=20,
+            )
+
+        self.assertEqual([item['similarity'] for item in result], [1.0, 1.0, 0.0])
+
+    def test_missing_project_and_project_without_embeddings(self):
+        empty_project = Project(name='no vectors')
+        self.db.add(empty_project)
+        self.db.commit()
+        self.db.refresh(empty_project)
+
+        with self.assertRaises(ProjectNotFoundError):
+            retrieve_project_chunks(self.db, 99999, 'question', 5)
+
+        with patch('app.services.retrieval_service.generate_embedding') as embedding:
+            self.assertEqual(retrieve_project_chunks(self.db, empty_project.id, 'question', 5), [])
+            embedding.assert_not_called()
+
+    def test_retrieval_service_bounds_top_k(self):
+        for invalid_top_k in (0, MAX_RETRIEVAL_TOP_K + 1, True):
+            with self.assertRaises(ValueError):
+                retrieve_project_chunks(self.db, self.project.id, 'question', invalid_top_k)
+
+    def test_endpoint_response_shape_and_request_validation(self):
+        request = ProjectRetrievalRequest(question='  database connection?  ', top_k=2)
+        with patch('app.services.retrieval_service.generate_embedding', return_value=[1, 0]):
+            response = retrieve_project_analysis(self.project.id, request, self.db)
+
+        self.assertEqual(response['project_id'], self.project.id)
+        self.assertEqual(response['question'], request.question)
+        self.assertEqual(len(response['results']), 2)
+        self.assertEqual(
+            set(response['results'][0]),
+            {'path', 'chunk_index', 'start_line', 'end_line', 'content', 'similarity'},
+        )
+        self.assertEqual(response['results'][0]['content'], 'tie source')
+
+        for invalid_request in (
+            {'question': '   ', 'top_k': 5},
+            {'question': 'valid', 'top_k': 21},
+            {'question': 'valid', 'top_k': 0},
+        ):
+            with self.assertRaises(ValidationError):
+                ProjectRetrievalRequest(**invalid_request)
+
+    def test_endpoint_sanitizes_question_embedding_failure(self):
+        request = ProjectRetrievalRequest(question='database connection')
+        with patch(
+            'app.services.retrieval_service.generate_embedding',
+            side_effect=EmbeddingGenerationError('private-provider-secret'),
+        ):
+            with self.assertRaises(HTTPException) as error:
+                retrieve_project_analysis(self.project.id, request, self.db)
+
+        self.assertEqual(error.exception.status_code, 502)
+        self.assertNotIn('private-provider-secret', str(error.exception.detail))
 
 
 if __name__ == '__main__':

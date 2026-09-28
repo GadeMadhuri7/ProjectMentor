@@ -90,6 +90,21 @@ def _validated_vector(vector: object) -> list[float]:
     return [float(value) for value in vector]
 
 
+def generate_embedding(text: str) -> list[float]:
+    if not isinstance(text, str) or not text.strip():
+        raise EmbeddingGenerationError('Embedding input must not be empty.')
+    provider = create_embedding_provider()
+    try:
+        vectors = provider.embed_batch([text])
+        if not isinstance(vectors, list) or len(vectors) != 1:
+            raise EmbeddingGenerationError('Embedding provider returned an invalid response.')
+        return _validated_vector(vectors[0])
+    except EmbeddingGenerationError:
+        raise
+    except Exception:
+        raise EmbeddingGenerationError('Embedding provider request failed.') from None
+
+
 def create_embedding_provider() -> OpenAICompatibleEmbeddingProvider:
     if EMBEDDING_PROVIDER != 'openai-compatible' or not EMBEDDING_MODEL or not EMBEDDING_API_KEY:
         raise EmbeddingGenerationError('Embedding provider is not configured.')
