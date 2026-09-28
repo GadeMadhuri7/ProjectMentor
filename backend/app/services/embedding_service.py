@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
+from functools import lru_cache
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
@@ -10,6 +13,7 @@ from app.config import (
     EMBEDDING_API_KEY,
     EMBEDDING_MODEL,
     EMBEDDING_PROVIDER,
+    LOCAL_EMBEDDING_MODEL,
 )
 from app.services.project_analyzer import MAX_SOURCE_CHUNK_CONTENT_BYTES, MAX_SOURCE_CHUNKS
 
@@ -17,10 +21,42 @@ from app.services.project_analyzer import MAX_SOURCE_CHUNK_CONTENT_BYTES, MAX_SO
 EMBEDDING_BATCH_SIZE = 32
 EMBEDDING_REQUEST_TIMEOUT_SECONDS = 30
 MAX_EMBEDDING_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_PROVIDER_ERROR_BODY_BYTES = 2048
+
+logger = logging.getLogger(__name__)
 
 
 class EmbeddingGenerationError(Exception):
     pass
+
+
+def _provider_error_summary(message: str) -> str:
+    normalized = message.lower()
+    if any(marker in normalized for marker in ('rate limit', 'tpm', 'rpm', 'quota')):
+        return 'provider rate or token quota rejected the request'
+    if any(marker in normalized for marker in ('unauthorized', 'authentication', 'api key', 'credential')):
+        return 'provider rejected authentication'
+    if any(marker in normalized for marker in ('context length', 'token limit', 'too many tokens', 'input length')):
+        return 'provider input exceeded a model limit'
+    if any(marker in normalized for marker in ('model not found', 'unsupported model', 'invalid model')):
+        return 'provider rejected or could not find the configured model'
+    if any(marker in normalized for marker in ('not found', '404')):
+        return 'provider endpoint or model was not found'
+    if any(marker in normalized for marker in ('overloaded', 'temporarily unavailable', 'service unavailable')):
+        return 'provider is temporarily unavailable'
+    return 'provider rejected the request; response details omitted'
+
+
+def _exception_summary(error: Exception) -> str:
+    if isinstance(error, TimeoutError):
+        return 'provider request timed out'
+    if isinstance(error, URLError):
+        return 'provider network or TLS connection failed'
+    if isinstance(error, json.JSONDecodeError):
+        return 'provider returned invalid JSON'
+    if isinstance(error, (KeyError, IndexError, TypeError)):
+        return 'provider response had an unexpected format'
+    return 'provider request failed; exception details omitted'
 
 
 class OpenAICompatibleEmbeddingProvider:
@@ -71,10 +107,71 @@ class OpenAICompatibleEmbeddingProvider:
             if any(vector is None for vector in vectors):
                 raise EmbeddingGenerationError('Embedding provider returned an invalid response.')
             return [vector for vector in vectors if vector is not None]
+        except HTTPError as error:
+            try:
+                error_body = error.read(MAX_PROVIDER_ERROR_BODY_BYTES).decode('utf-8', errors='replace')
+            except Exception:
+                error_body = ''
+            summary = _provider_error_summary(error_body)
+            logger.warning('Embedding provider HTTP error status=%s: %s', error.code, summary)
+            raise EmbeddingGenerationError('Embedding provider request failed.') from None
+        except EmbeddingGenerationError as error:
+            logger.warning(
+                'Embedding provider response failure type=%s: %s',
+                type(error).__name__,
+                _provider_error_summary(str(error)),
+            )
+            raise
+        except Exception as error:
+            logger.warning(
+                'Embedding provider failure type=%s: %s',
+                type(error).__name__,
+                _exception_summary(error),
+            )
+            raise EmbeddingGenerationError('Embedding provider request failed.') from None
+
+
+@lru_cache(maxsize=1)
+def _load_local_sentence_transformer(model_name: str):
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name, device='cpu')
+
+
+class LocalSentenceTransformerEmbeddingProvider:
+    name = 'local'
+
+    def __init__(self, model: str):
+        self.model = model
+
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        try:
+            model = _load_local_sentence_transformer(self.model)
+            vectors = model.encode(
+                texts,
+                batch_size=EMBEDDING_BATCH_SIZE,
+                convert_to_numpy=True,
+                normalize_embeddings=False,
+                show_progress_bar=False,
+            )
+            result = [
+                _validated_vector(vector.tolist())
+                for vector in vectors
+            ]
+            if len(result) != len(texts):
+                raise EmbeddingGenerationError('Local embedding model returned an invalid response.')
+            return result
         except EmbeddingGenerationError:
             raise
-        except Exception:
-            raise EmbeddingGenerationError('Embedding provider request failed.') from None
+        except Exception as error:
+            logger.warning(
+                'Local embedding failure type=%s: %s',
+                type(error).__name__,
+                'model loading or inference failed; details omitted',
+            )
+            raise EmbeddingGenerationError('Local embedding generation failed.') from None
 
 
 def _validated_vector(vector: object) -> list[float]:
@@ -105,7 +202,12 @@ def generate_embedding(text: str) -> list[float]:
         raise EmbeddingGenerationError('Embedding provider request failed.') from None
 
 
-def create_embedding_provider() -> OpenAICompatibleEmbeddingProvider:
+def create_embedding_provider() -> OpenAICompatibleEmbeddingProvider | LocalSentenceTransformerEmbeddingProvider:
+    if EMBEDDING_PROVIDER == 'local':
+        if not LOCAL_EMBEDDING_MODEL:
+            raise EmbeddingGenerationError('Local embedding model is not configured.')
+        return LocalSentenceTransformerEmbeddingProvider(LOCAL_EMBEDDING_MODEL)
+
     if EMBEDDING_PROVIDER != 'openai-compatible' or not EMBEDDING_MODEL or not EMBEDDING_API_KEY:
         raise EmbeddingGenerationError('Embedding provider is not configured.')
     return OpenAICompatibleEmbeddingProvider(

@@ -1,11 +1,14 @@
 import json
 import asyncio
+import sys
+import types
 from io import BytesIO
 import tempfile
 import unittest
 import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
 
 from fastapi import HTTPException, UploadFile
 from pydantic import ValidationError
@@ -31,8 +34,12 @@ from app.schemas import (
 )
 from app.services.embedding_service import (
     EMBEDDING_BATCH_SIZE,
+    MAX_PROVIDER_ERROR_BODY_BYTES,
     EmbeddingGenerationError,
+    LocalSentenceTransformerEmbeddingProvider,
     OpenAICompatibleEmbeddingProvider,
+    _load_local_sentence_transformer,
+    create_embedding_provider,
     generate_embeddings,
 )
 from app.services.project_analyzer import (
@@ -442,6 +449,65 @@ class FakeEmbeddingProvider:
 
 
 class EmbeddingServiceTests(unittest.TestCase):
+    def test_local_provider_factory_does_not_load_model(self):
+        with (
+            patch('app.services.embedding_service.EMBEDDING_PROVIDER', 'local'),
+            patch('app.services.embedding_service.LOCAL_EMBEDDING_MODEL', 'BAAI/bge-small-en-v1.5'),
+            patch('app.services.embedding_service._load_local_sentence_transformer') as load_model,
+        ):
+            provider = create_embedding_provider()
+
+        self.assertIsInstance(provider, LocalSentenceTransformerEmbeddingProvider)
+        self.assertEqual(provider.name, 'local')
+        self.assertEqual(provider.model, 'BAAI/bge-small-en-v1.5')
+        load_model.assert_not_called()
+
+    def test_local_provider_encodes_on_cpu_in_batches_and_returns_python_floats(self):
+        class FakeVector:
+            def __init__(self, values):
+                self.values = values
+
+            def tolist(self):
+                return self.values
+
+        fake_model = Mock()
+        fake_model.encode.return_value = [FakeVector([1, 2]), FakeVector([3.5, 4])]
+        provider = LocalSentenceTransformerEmbeddingProvider('BAAI/bge-small-en-v1.5')
+
+        with patch(
+            'app.services.embedding_service._load_local_sentence_transformer',
+            return_value=fake_model,
+        ) as load_model:
+            vectors = provider.embed_batch(['first text', 'second text'])
+
+        load_model.assert_called_once_with('BAAI/bge-small-en-v1.5')
+        fake_model.encode.assert_called_once_with(
+            ['first text', 'second text'],
+            batch_size=EMBEDDING_BATCH_SIZE,
+            convert_to_numpy=True,
+            normalize_embeddings=False,
+            show_progress_bar=False,
+        )
+        self.assertEqual(vectors, [[1.0, 2.0], [3.5, 4.0]])
+        self.assertTrue(all(type(value) is float for vector in vectors for value in vector))
+
+    def test_local_model_loader_imports_sentence_transformers_lazily_on_cpu(self):
+        fake_sentence_transformer = Mock(return_value=object())
+        fake_module = types.ModuleType('sentence_transformers')
+        fake_module.SentenceTransformer = fake_sentence_transformer
+        _load_local_sentence_transformer.cache_clear()
+        try:
+            with patch.dict(sys.modules, {'sentence_transformers': fake_module}):
+                loaded_model = _load_local_sentence_transformer('BAAI/bge-small-en-v1.5')
+        finally:
+            _load_local_sentence_transformer.cache_clear()
+
+        self.assertIsNotNone(loaded_model)
+        fake_sentence_transformer.assert_called_once_with(
+            'BAAI/bge-small-en-v1.5',
+            device='cpu',
+        )
+
     def test_provider_requires_https_configuration(self):
         with self.assertRaises(EmbeddingGenerationError):
             OpenAICompatibleEmbeddingProvider('model', 'placeholder-key', 'http://provider.test/v1')
@@ -526,6 +592,84 @@ class EmbeddingServiceTests(unittest.TestCase):
             }], provider=provider)
 
         self.assertNotIn('private-api-key', str(error.exception))
+
+    def test_http_provider_failure_logs_status_and_safe_summary_only(self):
+        provider = OpenAICompatibleEmbeddingProvider(
+            'model', 'test-api-key', 'https://provider.test/v1',
+        )
+        source_text = 'private source chunk content'
+        response_body = (
+            '{"message":"TPM limit reached; Authorization: Bearer test-api-key; '
+            'input: private source chunk content"}'
+        ).encode('utf-8')
+        error = HTTPError(
+            'https://provider.test/v1/embeddings',
+            429,
+            'Too Many Requests',
+            {},
+            BytesIO(response_body),
+        )
+
+        with patch('app.services.embedding_service.urlopen', side_effect=error):
+            with self.assertLogs('app.services.embedding_service', level='WARNING') as captured:
+                with self.assertRaisesRegex(
+                    EmbeddingGenerationError,
+                    r'^Embedding provider request failed\.$',
+                ):
+                    provider.embed_batch([source_text])
+
+        log_output = '\n'.join(captured.output)
+        self.assertIn('status=429', log_output)
+        self.assertIn('rate or token quota', log_output)
+        self.assertNotIn('test-api-key', log_output)
+        self.assertNotIn('Bearer', log_output)
+        self.assertNotIn(source_text, log_output)
+
+    def test_http_error_body_read_is_strictly_bounded(self):
+        class TrackingHTTPError(HTTPError):
+            def read(self, size=-1):
+                self.read_size = size
+                return super().read(size)
+
+        provider = OpenAICompatibleEmbeddingProvider(
+            'model', 'test-api-key', 'https://provider.test/v1',
+        )
+        error = TrackingHTTPError(
+            'https://provider.test/v1/embeddings',
+            400,
+            'Bad Request',
+            {},
+            BytesIO(b'x' * (MAX_PROVIDER_ERROR_BODY_BYTES * 4)),
+        )
+        with patch('app.services.embedding_service.urlopen', side_effect=error):
+            with self.assertLogs('app.services.embedding_service', level='WARNING'):
+                with self.assertRaises(EmbeddingGenerationError):
+                    provider.embed_batch(['sample'])
+
+        self.assertEqual(error.read_size, MAX_PROVIDER_ERROR_BODY_BYTES)
+
+    def test_non_http_provider_failure_logs_type_and_safe_message_only(self):
+        provider = OpenAICompatibleEmbeddingProvider(
+            'model', 'test-api-key', 'https://provider.test/v1',
+        )
+        unsafe_detail = 'Bearer test-api-key private source chunk content'
+        with patch(
+            'app.services.embedding_service.urlopen',
+            side_effect=TimeoutError(unsafe_detail),
+        ):
+            with self.assertLogs('app.services.embedding_service', level='WARNING') as captured:
+                with self.assertRaisesRegex(
+                    EmbeddingGenerationError,
+                    r'^Embedding provider request failed\.$',
+                ):
+                    provider.embed_batch(['private source chunk content'])
+
+        log_output = '\n'.join(captured.output)
+        self.assertIn('type=TimeoutError', log_output)
+        self.assertIn('timed out', log_output)
+        self.assertNotIn('test-api-key', log_output)
+        self.assertNotIn('Bearer', log_output)
+        self.assertNotIn('private source chunk content', log_output)
 
 
 class ProjectEmbeddingTests(unittest.TestCase):

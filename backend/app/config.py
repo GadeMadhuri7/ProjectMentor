@@ -14,6 +14,10 @@ DATABASE_URL = os.getenv(
 FRONTEND_ORIGIN = os.getenv('FRONTEND_ORIGIN', 'http://localhost:5173')
 EMBEDDING_PROVIDER = os.getenv('EMBEDDING_PROVIDER', '').strip().lower()
 EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL', '').strip()
+LOCAL_EMBEDDING_MODEL = os.getenv(
+    'LOCAL_EMBEDDING_MODEL',
+    'BAAI/bge-small-en-v1.5',
+).strip()
 EMBEDDING_API_KEY = os.getenv('EMBEDDING_API_KEY', '')
 EMBEDDING_API_BASE_URL = os.getenv(
     'EMBEDDING_API_BASE_URL',
