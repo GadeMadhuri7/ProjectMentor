@@ -16,9 +16,14 @@ from app.routes.projects import analyze_uploaded_project, get_project_analysis
 from app.services.project_analyzer import (
     MAX_SOURCE_CONTENT_BYTES,
     MAX_SOURCE_CONTENT_PER_FILE_BYTES,
+    MAX_SOURCE_CHUNKS,
+    MAX_SOURCE_CHUNK_CONTENT_BYTES,
     MAX_SOURCE_FILES_INSPECTED,
     MAX_SOURCE_FILE_BYTES,
+    SOURCE_CHUNK_LINES,
+    SOURCE_CHUNK_OVERLAP_LINES,
     analyze_project,
+    chunk_source_files,
     extract_zip_safely,
 )
 
@@ -59,7 +64,7 @@ class ProjectAnalyzerTests(unittest.TestCase):
             for field in (
                 'project_name', 'total_files', 'total_directories', 'languages',
                 'technologies', 'important_files', 'structure', 'analysis_warnings',
-                'project_inventory', 'source_files',
+                'project_inventory', 'source_files', 'source_chunks',
             ):
                 self.assertIn(field, result)
 
@@ -161,11 +166,12 @@ class ProjectAnalysisPersistenceTests(unittest.TestCase):
             {
                 'project_name', 'total_files', 'total_directories', 'languages',
                 'technologies', 'important_files', 'structure', 'analysis_warnings',
-                'project_inventory', 'source_files',
+                'project_inventory', 'source_files', 'source_chunks',
             },
         )
         self.assertEqual(result['project_inventory']['source_files'], ['source/main.py'])
         self.assertIn('project_inventory', persisted.analysis_data)
+        self.assertEqual(persisted.analysis_data['source_chunks'], result['source_chunks'])
 
     def test_reanalysis_replaces_the_current_record(self):
         first_result = self._analyze_archive(
@@ -272,6 +278,109 @@ class SourceInspectionTests(unittest.TestCase):
             self.assertLessEqual(content_bytes, MAX_SOURCE_CONTENT_BYTES)
             self.assertTrue(any(item['status'] == 'content_truncated' for item in result['source_files']))
             self.assertTrue(any(item['status'] == 'content_limit' for item in result['source_files']))
+
+
+class SourceChunkingTests(unittest.TestCase):
+    def test_short_file_produces_one_chunk_with_line_metadata(self):
+        chunks, warnings = chunk_source_files([{
+            'path': 'src/short.py',
+            'language': 'Python',
+            'status': 'inspected',
+            'content': 'one\ntwo\n',
+        }])
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(len(chunks), 1)
+        self.assertEqual(chunks[0]['chunk_index'], 0)
+        self.assertEqual(chunks[0]['start_line'], 1)
+        self.assertEqual(chunks[0]['end_line'], 2)
+        self.assertEqual(chunks[0]['content'], 'one\ntwo\n')
+
+    def test_long_file_chunks_with_line_overlap_and_deterministic_order(self):
+        source_files = [
+            {
+                'path': 'z.py',
+                'language': 'Python',
+                'status': 'inspected',
+                'content': ''.join(f'z{line:03}\n' for line in range(1, 3)),
+            },
+            {
+                'path': 'a.py',
+                'language': 'Python',
+                'status': 'inspected',
+                'content': ''.join(f'line{line:03}\n' for line in range(1, 206)),
+            },
+        ]
+
+        chunks, warnings = chunk_source_files(source_files)
+        repeated_chunks, repeated_warnings = chunk_source_files(list(reversed(source_files)))
+        file_chunks = [chunk for chunk in chunks if chunk['path'] == 'a.py']
+
+        self.assertEqual(warnings, [])
+        self.assertEqual(repeated_warnings, [])
+        self.assertEqual(chunks, repeated_chunks)
+        self.assertEqual([chunk['path'] for chunk in chunks[:3]], ['a.py', 'a.py', 'a.py'])
+        self.assertEqual(
+            [(chunk['chunk_index'], chunk['start_line'], chunk['end_line']) for chunk in file_chunks],
+            [(0, 1, 100), (1, 91, 190), (2, 181, 205)],
+        )
+        self.assertEqual(SOURCE_CHUNK_OVERLAP_LINES, 10)
+        self.assertEqual(
+            file_chunks[0]['content'].splitlines()[-SOURCE_CHUNK_OVERLAP_LINES:],
+            file_chunks[1]['content'].splitlines()[:SOURCE_CHUNK_OVERLAP_LINES],
+        )
+        self.assertEqual(SOURCE_CHUNK_LINES, 100)
+
+    def test_empty_and_non_inspected_files_produce_no_chunks(self):
+        source_files = [
+            {'path': 'empty.py', 'language': 'Python', 'status': 'inspected', 'content': ''},
+            {'path': 'binary.py', 'language': 'Python', 'status': 'binary', 'content': None},
+            {'path': 'invalid.py', 'language': 'Python', 'status': 'invalid_encoding', 'content': None},
+            {'path': 'large.py', 'language': 'Python', 'status': 'too_large', 'content': None},
+            {'path': 'unreadable.py', 'language': 'Python', 'status': 'unreadable', 'content': None},
+            {'path': 'partial.py', 'language': 'Python', 'status': 'content_truncated', 'content': 'partial'},
+        ]
+
+        chunks, warnings = chunk_source_files(source_files)
+
+        self.assertEqual(chunks, [])
+        self.assertEqual(warnings, [])
+
+    def test_global_chunk_count_is_bounded_with_warning(self):
+        source_files = [
+            {
+                'path': f'{name}.py',
+                'language': 'Python',
+                'status': 'inspected',
+                'content': '\n' * MAX_SOURCE_CONTENT_PER_FILE_BYTES,
+            }
+            for name in ('a', 'b')
+        ]
+
+        chunks, warnings = chunk_source_files(source_files)
+
+        self.assertEqual(len(chunks), MAX_SOURCE_CHUNKS)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('capped at', warnings[0])
+
+    def test_total_chunk_content_is_bounded_with_warning(self):
+        content = ('x' * 176 + '\n') * 180
+        source_files = [
+            {
+                'path': f'{index:02}.py',
+                'language': 'Python',
+                'status': 'inspected',
+                'content': content,
+            }
+            for index in range(16)
+        ]
+
+        chunks, warnings = chunk_source_files(source_files)
+        total_content_bytes = sum(len(chunk['content'].encode('utf-8')) for chunk in chunks)
+
+        self.assertLessEqual(total_content_bytes, MAX_SOURCE_CHUNK_CONTENT_BYTES)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('response limit', warnings[0])
 
 
 if __name__ == '__main__':

@@ -46,6 +46,10 @@ MAX_SOURCE_FILES_INSPECTED = 100
 MAX_SOURCE_FILE_BYTES = 128 * 1024
 MAX_SOURCE_CONTENT_BYTES = 512 * 1024
 MAX_SOURCE_CONTENT_PER_FILE_BYTES = 32 * 1024
+SOURCE_CHUNK_LINES = 100
+SOURCE_CHUNK_OVERLAP_LINES = 10
+MAX_SOURCE_CHUNKS = 500
+MAX_SOURCE_CHUNK_CONTENT_BYTES = 512 * 1024
 SOURCE_TEXT_EXTENSIONS = frozenset(LANGUAGE_EXTENSIONS) | DOCUMENTATION_EXTENSIONS
 
 
@@ -288,6 +292,55 @@ def inspect_source_files(root: Path, files: list[dict]) -> tuple[list[dict], int
     return inspected, len(candidates), returned_content_bytes
 
 
+def chunk_source_files(source_files: list[dict]) -> tuple[list[dict], list[str]]:
+    chunks: list[dict] = []
+    warnings: list[str] = []
+    total_content_bytes = 0
+
+    for source_file in sorted(source_files, key=lambda item: item['path']):
+        content = source_file.get('content')
+        if source_file.get('status') != 'inspected' or not isinstance(content, str) or not content:
+            continue
+
+        lines = content.splitlines(keepends=True)
+        if not lines:
+            continue
+
+        start = 0
+        chunk_index = 0
+        while start < len(lines):
+            end = min(start + SOURCE_CHUNK_LINES, len(lines))
+            chunk_content = ''.join(lines[start:end])
+            chunk_bytes = len(chunk_content.encode('utf-8'))
+            if len(chunks) >= MAX_SOURCE_CHUNKS:
+                warnings.append(
+                    f'Source chunk generation is capped at {MAX_SOURCE_CHUNKS} chunks; '
+                    'remaining chunks were omitted.'
+                )
+                return chunks, warnings
+            if total_content_bytes + chunk_bytes > MAX_SOURCE_CHUNK_CONTENT_BYTES:
+                warnings.append(
+                    'Source chunk content reached the response limit; remaining chunks were omitted.'
+                )
+                return chunks, warnings
+
+            chunks.append({
+                'path': source_file['path'],
+                'language': source_file.get('language'),
+                'chunk_index': chunk_index,
+                'start_line': start + 1,
+                'end_line': end,
+                'content': chunk_content,
+            })
+            total_content_bytes += chunk_bytes
+            if end == len(lines):
+                break
+            start = end - SOURCE_CHUNK_OVERLAP_LINES
+            chunk_index += 1
+
+    return chunks, warnings
+
+
 def analyze_project(root: Path, project_name: str | None = None) -> dict:
     root = root.resolve()
     files, warnings, ignored_files = discover_files(root)
@@ -307,6 +360,8 @@ def analyze_project(root: Path, project_name: str | None = None) -> dict:
             f'Source inspection is capped at {MAX_SOURCE_FILES_INSPECTED} files; '
             f'{source_file_count - len(source_files)} source files were not inspected.'
         )
+    source_chunks, chunk_warnings = chunk_source_files(source_files)
+    warnings.extend(chunk_warnings)
     return {
         'project_name': project_name or root.name,
         'total_files': len(files),
@@ -317,5 +372,6 @@ def analyze_project(root: Path, project_name: str | None = None) -> dict:
         'structure': build_project_structure(root, files),
         'project_inventory': build_project_inventory(files, ignored_files),
         'source_files': source_files,
+        'source_chunks': source_chunks,
         'analysis_warnings': warnings,
     }
